@@ -105,6 +105,10 @@ public class JobManager extends AbstractManager {
 
   protected void hintJobExecutor(JobEntity job) {
     JobExecutor jobExecutor = Context.getProcessEngineConfiguration().getJobExecutor();
+    if (!jobExecutor.isActive()) {
+      return;
+    }
+
     JobExecutorContext jobExecutorContext = Context.getJobExecutorContext();
     TransactionListener transactionListener = null;
     if(!job.isSuspended()

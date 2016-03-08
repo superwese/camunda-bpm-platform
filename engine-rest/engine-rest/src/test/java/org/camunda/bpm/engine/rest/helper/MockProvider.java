@@ -968,6 +968,13 @@ public abstract class MockProvider {
     when(statistics.getId()).thenReturn(EXAMPLE_PROCESS_DEFINITION_ID);
     when(statistics.getName()).thenReturn(EXAMPLE_PROCESS_DEFINITION_NAME);
     when(statistics.getKey()).thenReturn(EXAMPLE_PROCESS_DEFINITION_KEY);
+    when(statistics.getTenantId()).thenReturn(EXAMPLE_TENANT_ID);
+    when(statistics.getCategory()).thenReturn(EXAMPLE_PROCESS_DEFINITION_CATEGORY);
+    when(statistics.getDeploymentId()).thenReturn(EXAMPLE_DEPLOYMENT_ID);
+    when(statistics.getDiagramResourceName()).thenReturn(EXAMPLE_PROCESS_DEFINITION_DIAGRAM_RESOURCE_NAME);
+    when(statistics.getResourceName()).thenReturn(EXAMPLE_PROCESS_DEFINITION_RESOURCE_NAME);
+    when(statistics.getVersion()).thenReturn(EXAMPLE_PROCESS_DEFINITION_VERSION);
+    when(statistics.getDescription()).thenReturn(EXAMPLE_PROCESS_DEFINITION_DESCRIPTION);
 
     IncidentStatistics incidentStaticits = mock(IncidentStatistics.class);
     when(incidentStaticits.getIncidentType()).thenReturn(EXAMPLE_INCIDENT_TYPE);
@@ -983,6 +990,7 @@ public abstract class MockProvider {
     when(anotherStatistics.getId()).thenReturn(ANOTHER_EXAMPLE_PROCESS_DEFINITION_ID);
     when(anotherStatistics.getName()).thenReturn(EXAMPLE_PROCESS_DEFINITION_NAME);
     when(anotherStatistics.getKey()).thenReturn(EXAMPLE_PROCESS_DEFINITION_KEY);
+    when(anotherStatistics.getTenantId()).thenReturn(ANOTHER_EXAMPLE_TENANT_ID);
 
     IncidentStatistics anotherIncidentStaticits = mock(IncidentStatistics.class);
     when(anotherIncidentStaticits.getIncidentType()).thenReturn(ANOTHER_EXAMPLE_INCIDENT_TYPE);
@@ -2039,8 +2047,11 @@ public abstract class MockProvider {
   }
 
   // Historic Incident ///////////////////////////////////////
-
   public static HistoricIncident createMockHistoricIncident() {
+    return createMockHistoricIncident(EXAMPLE_TENANT_ID);
+  }
+
+  public static HistoricIncident createMockHistoricIncident(String tenantId) {
     HistoricIncident incident = mock(HistoricIncident.class);
 
     when(incident.getId()).thenReturn(EXAMPLE_HIST_INCIDENT_ID);
@@ -2059,6 +2070,7 @@ public abstract class MockProvider {
     when(incident.isOpen()).thenReturn(EXAMPLE_HIST_INCIDENT_STATE_OPEN);
     when(incident.isDeleted()).thenReturn(EXAMPLE_HIST_INCIDENT_STATE_DELETED);
     when(incident.isResolved()).thenReturn(EXAMPLE_HIST_INCIDENT_STATE_RESOLVED);
+    when(incident.getTenantId()).thenReturn(tenantId);
 
     return incident;
   }
@@ -2281,6 +2293,10 @@ public abstract class MockProvider {
   }
 
   public static HistoricJobLog createMockHistoricJobLog() {
+    return createMockHistoricJobLog(EXAMPLE_TENANT_ID);
+  }
+
+  public static HistoricJobLog createMockHistoricJobLog(String tenantId) {
     HistoricJobLog mock = mock(HistoricJobLog.class);
 
     when(mock.getId()).thenReturn(EXAMPLE_HISTORIC_JOB_LOG_ID);
@@ -2302,6 +2318,7 @@ public abstract class MockProvider {
     when(mock.getProcessDefinitionId()).thenReturn(EXAMPLE_HISTORIC_JOB_LOG_PROC_DEF_ID);
     when(mock.getProcessDefinitionKey()).thenReturn(EXAMPLE_HISTORIC_JOB_LOG_PROC_DEF_KEY);
     when(mock.getDeploymentId()).thenReturn(EXAMPLE_HISTORIC_JOB_LOG_DEPLOYMENT_ID);
+    when(mock.getTenantId()).thenReturn(tenantId);
     when(mock.isCreationLog()).thenReturn(EXAMPLE_HISTORIC_JOB_LOG_IS_CREATION_LOG);
     when(mock.isFailureLog()).thenReturn(EXAMPLE_HISTORIC_JOB_LOG_IS_FAILURE_LOG);
     when(mock.isSuccessLog()).thenReturn(EXAMPLE_HISTORIC_JOB_LOG_IS_SUCCESS_LOG);

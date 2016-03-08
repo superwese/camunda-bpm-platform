@@ -25,6 +25,7 @@ import org.camunda.bpm.engine.rest.dto.CamundaQueryParam;
 import org.camunda.bpm.engine.rest.dto.converter.BooleanConverter;
 import org.camunda.bpm.engine.rest.dto.converter.LongConverter;
 import org.camunda.bpm.engine.rest.dto.converter.StringArrayConverter;
+import org.camunda.bpm.engine.rest.dto.converter.StringListConverter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -47,6 +48,7 @@ public class HistoricJobLogQueryDto extends AbstractQueryDto<HistoricJobLogQuery
   protected static final String SORT_BY_PROCESS_DEFINITION_KEY = "processDefinitionKey";
   protected static final String SORT_BY_DEPLOYMENT_ID = "deploymentId";
   protected static final String SORT_PARTIALLY_BY_OCCURRENCE = "occurrence";
+  protected static final String SORT_BY_TENANT_ID = "tenantId";
 
   protected static final List<String> VALID_SORT_BY_VALUES;
   static {
@@ -65,6 +67,7 @@ public class HistoricJobLogQueryDto extends AbstractQueryDto<HistoricJobLogQuery
     VALID_SORT_BY_VALUES.add(SORT_BY_PROCESS_DEFINITION_KEY);
     VALID_SORT_BY_VALUES.add(SORT_BY_DEPLOYMENT_ID);
     VALID_SORT_BY_VALUES.add(SORT_PARTIALLY_BY_OCCURRENCE);
+    VALID_SORT_BY_VALUES.add(SORT_BY_TENANT_ID);
   }
 
   protected String id;
@@ -85,6 +88,7 @@ public class HistoricJobLogQueryDto extends AbstractQueryDto<HistoricJobLogQuery
   protected Boolean deletionLog;
   protected Long jobPriorityHigherThanOrEquals;
   protected Long jobPriorityLowerThanOrEquals;
+  protected List<String> tenantIds;
 
   public HistoricJobLogQueryDto() {}
 
@@ -182,14 +186,22 @@ public class HistoricJobLogQueryDto extends AbstractQueryDto<HistoricJobLogQuery
     this.jobPriorityLowerThanOrEquals = jobPriorityLowerThanOrEquals;
   }
 
+  @CamundaQueryParam(value = "tenantIdIn", converter = StringListConverter.class)
+  public void setTenantIdIn(List<String> tenantIds) {
+    this.tenantIds = tenantIds;
+  }
+
+  @Override
   protected boolean isValidSortByValue(String value) {
     return VALID_SORT_BY_VALUES.contains(value);
   }
 
+  @Override
   protected HistoricJobLogQuery createNewQuery(ProcessEngine engine) {
     return engine.getHistoryService().createHistoricJobLogQuery();
   }
 
+  @Override
   protected void applyFilters(HistoricJobLogQuery query) {
     if (id != null) {
       query.logId(id);
@@ -262,8 +274,12 @@ public class HistoricJobLogQueryDto extends AbstractQueryDto<HistoricJobLogQuery
     if (jobPriorityHigherThanOrEquals != null) {
       query.jobPriorityHigherThanOrEquals(jobPriorityHigherThanOrEquals);
     }
+    if (tenantIds != null && !tenantIds.isEmpty()) {
+      query.tenantIdIn(tenantIds.toArray(new String[tenantIds.size()]));
+    }
   }
 
+  @Override
   protected void applySortBy(HistoricJobLogQuery query, String sortBy, Map<String, Object> parameters, ProcessEngine engine) {
     if (sortBy.equals(SORT_BY_TIMESTAMP)) {
       query.orderByTimestamp();
@@ -291,6 +307,8 @@ public class HistoricJobLogQueryDto extends AbstractQueryDto<HistoricJobLogQuery
       query.orderByDeploymentId();
     } else if (sortBy.equals(SORT_PARTIALLY_BY_OCCURRENCE)) {
       query.orderPartiallyByOccurrence();
+    } else if (sortBy.equals(SORT_BY_TENANT_ID)) {
+      query.orderByTenantId();
     }
   }
 

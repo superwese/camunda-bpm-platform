@@ -643,4 +643,25 @@ public class MessageRestServiceTest extends AbstractRestServiceTest {
 //        argThat(new EqualsMap(expectedCorrelationKeys)), argThat(new EqualsMap(expectedVariables)));
   }
 
+  @Test
+  public void testMessageCorrelationWithProcessInstanceId() {
+    String messageName = "aMessageName";
+
+    Map<String, Object> messageParameters = new HashMap<String, Object>();
+    messageParameters.put("messageName", messageName);
+    messageParameters.put("processInstanceId", MockProvider.EXAMPLE_PROCESS_INSTANCE_ID);
+
+    given()
+      .contentType(POST_JSON_CONTENT_TYPE)
+       .body(messageParameters)
+    .then()
+      .expect().statusCode(Status.NO_CONTENT.getStatusCode())
+    .when().post(MESSAGE_URL);
+
+    verify(runtimeServiceMock).createMessageCorrelation(eq(messageName));
+    verify(messageCorrelationBuilderMock).processInstanceId(eq(MockProvider.EXAMPLE_PROCESS_INSTANCE_ID));
+
+    verify(messageCorrelationBuilderMock).correlate();
+  }
+
 }

@@ -93,6 +93,11 @@ public class MessageRestServiceImpl extends AbstractRestProcessEngineAware imple
       builder.processInstanceId(processInstanceId);
     }
 
+    String processInstanceId = messageDto.getProcessInstanceId();
+    if (processInstanceId != null) {
+      builder.processInstanceId(processInstanceId);
+    }
+
     return builder;
   }
 

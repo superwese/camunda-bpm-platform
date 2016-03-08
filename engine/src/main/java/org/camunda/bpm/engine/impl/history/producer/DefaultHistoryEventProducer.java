@@ -277,6 +277,7 @@ public class DefaultHistoryEventProducer implements HistoryEventProducer {
     evt.setRootCauseIncidentId(incident.getRootCauseIncidentId());
     evt.setConfiguration(incident.getConfiguration());
     evt.setIncidentMessage(incident.getIncidentMessage());
+    evt.setTenantId(incident.getTenantId());
 
     IncidentEntity incidentEntity = (IncidentEntity) incident;
     ProcessDefinitionEntity definition = incidentEntity.getProcessDefinition();
@@ -718,6 +719,7 @@ public class DefaultHistoryEventProducer implements HistoryEventProducer {
     evt.setProcessDefinitionId(jobEntity.getProcessDefinitionId());
     evt.setProcessDefinitionKey(jobEntity.getProcessDefinitionKey());
     evt.setDeploymentId(jobEntity.getDeploymentId());
+    evt.setTenantId(jobEntity.getTenantId());
 
     // initialize sequence counter
     initSequenceCounter(jobEntity, evt);
