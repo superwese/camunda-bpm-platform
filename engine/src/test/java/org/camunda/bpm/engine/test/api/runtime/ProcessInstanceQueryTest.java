@@ -12,6 +12,14 @@
  */
 package org.camunda.bpm.engine.test.api.runtime;
 
+import static org.hamcrest.CoreMatchers.containsString;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -24,40 +32,96 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.camunda.bpm.engine.CaseService;
+import org.camunda.bpm.engine.ManagementService;
 import org.camunda.bpm.engine.ProcessEngineException;
+import org.camunda.bpm.engine.RepositoryService;
+import org.camunda.bpm.engine.RuntimeService;
 import org.camunda.bpm.engine.exception.NullValueException;
-import org.camunda.bpm.engine.impl.test.PluggableProcessEngineTestCase;
+import org.camunda.bpm.engine.repository.ProcessDefinition;
 import org.camunda.bpm.engine.runtime.Execution;
 import org.camunda.bpm.engine.runtime.Incident;
+import org.camunda.bpm.engine.runtime.Job;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.camunda.bpm.engine.runtime.ProcessInstanceQuery;
+import org.camunda.bpm.engine.task.Task;
 import org.camunda.bpm.engine.test.Deployment;
+import org.camunda.bpm.engine.test.ProcessEngineRule;
+import org.camunda.bpm.engine.test.api.runtime.migration.models.CompensationModels;
+import org.camunda.bpm.engine.test.api.runtime.migration.models.ProcessModels;
+import org.camunda.bpm.engine.test.util.ProcessEngineTestRule;
+import org.camunda.bpm.engine.test.util.ProvidedProcessEngineRule;
 import org.camunda.bpm.engine.variable.Variables;
+import org.camunda.bpm.model.bpmn.BpmnModelInstance;
 import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.RuleChain;
 
 /**
  * @author Joram Barrez
  * @author Frederik Heremans
  * @author Falko Menge
  */
-public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
+public class ProcessInstanceQueryTest {
+
+  public static final BpmnModelInstance FORK_JOIN_SUB_PROCESS_MODEL = ProcessModels.newModel()
+    .startEvent()
+    .subProcess("subProcess")
+    .embeddedSubProcess()
+      .startEvent()
+      .parallelGateway("fork")
+        .userTask("userTask1")
+        .name("completeMe")
+      .parallelGateway("join")
+      .endEvent()
+      .moveToNode("fork")
+        .userTask("userTask2")
+      .connectTo("join")
+    .subProcessDone()
+    .endEvent()
+    .done();
+
+  protected ProcessEngineRule engineRule = new ProvidedProcessEngineRule();
+  protected ProcessEngineTestRule testHelper = new ProcessEngineTestRule(engineRule);
+
+  @Rule
+  public RuleChain ruleChain = RuleChain.outerRule(engineRule).around(testHelper);
 
   private static String PROCESS_DEFINITION_KEY = "oneTaskProcess";
   private static String PROCESS_DEFINITION_KEY_2 = "oneTaskProcess2";
 
-  private List<String> processInstanceIds;
+  protected RuntimeService runtimeService;
+  protected RepositoryService repositoryService;
+  protected ManagementService managementService;
+  protected CaseService caseService;
+
+  protected List<String> processInstanceIds;
+
+  @Before
+  public void initServices() {
+    runtimeService = engineRule.getRuntimeService();
+    repositoryService = engineRule.getRepositoryService();
+    managementService = engineRule.getManagementService();
+    caseService = engineRule.getCaseService();
+  }
+
 
   /**
    * Setup starts 4 process instances of oneTaskProcess
    * and 1 instance of oneTaskProcess2
    */
-  protected void setUp() throws Exception {
-    super.setUp();
-    repositoryService.createDeployment()
+  @Before
+  public void deployTestProcesses() throws Exception {
+    org.camunda.bpm.engine.repository.Deployment deployment = engineRule.getRepositoryService().createDeployment()
       .addClasspathResource("org/camunda/bpm/engine/test/api/runtime/oneTaskProcess.bpmn20.xml")
       .addClasspathResource("org/camunda/bpm/engine/test/api/runtime/oneTaskProcess2.bpmn20.xml")
       .deploy();
 
+    engineRule.manageDeployment(deployment);
+
+    RuntimeService runtimeService = engineRule.getRuntimeService();
     processInstanceIds = new ArrayList<String>();
     for (int i = 0; i < 4; i++) {
       processInstanceIds.add(runtimeService.startProcessInstanceByKey(PROCESS_DEFINITION_KEY, i + "").getId());
@@ -65,19 +129,15 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     processInstanceIds.add(runtimeService.startProcessInstanceByKey(PROCESS_DEFINITION_KEY_2, "1").getId());
   }
 
-  protected void tearDown() throws Exception {
-    for (org.camunda.bpm.engine.repository.Deployment deployment : repositoryService.createDeploymentQuery().list()) {
-      repositoryService.deleteDeployment(deployment.getId(), true);
-    }
-    super.tearDown();
-  }
 
+  @Test
   public void testQueryNoSpecificsList() {
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery();
     assertEquals(5, query.count());
     assertEquals(5, query.list().size());
   }
 
+  @Test
   public void testQueryNoSpecificsSingleResult() {
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery();
     try {
@@ -88,6 +148,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     }
   }
 
+  @Test
   public void testQueryByProcessDefinitionKeySingleResult() {
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().processDefinitionKey(PROCESS_DEFINITION_KEY_2);
     assertEquals(1, query.count());
@@ -95,11 +156,13 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertNotNull(query.singleResult());
   }
 
+  @Test
   public void testQueryByInvalidProcessDefinitionKey() {
     assertNull(runtimeService.createProcessInstanceQuery().processDefinitionKey("invalid").singleResult());
     assertEquals(0, runtimeService.createProcessInstanceQuery().processDefinitionKey("invalid").list().size());
   }
 
+  @Test
   public void testQueryByProcessDefinitionKeyMultipleResults() {
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().processDefinitionKey(PROCESS_DEFINITION_KEY);
     assertEquals(4, query.count());
@@ -113,6 +176,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     }
   }
 
+  @Test
   public void testQueryByProcessInstanceId() {
     for (String processInstanceId : processInstanceIds) {
       assertNotNull(runtimeService.createProcessInstanceQuery().processInstanceId(processInstanceId).singleResult());
@@ -120,6 +184,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     }
   }
 
+  @Test
   public void testQueryByBusinessKeyAndProcessDefinitionKey() {
     assertEquals(1, runtimeService.createProcessInstanceQuery().processInstanceBusinessKey("0", PROCESS_DEFINITION_KEY).count());
     assertEquals(1, runtimeService.createProcessInstanceQuery().processInstanceBusinessKey("1", PROCESS_DEFINITION_KEY).count());
@@ -128,27 +193,31 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(1, runtimeService.createProcessInstanceQuery().processInstanceBusinessKey("1", PROCESS_DEFINITION_KEY_2).count());
   }
 
+  @Test
   public void testQueryByBusinessKey() {
     assertEquals(1, runtimeService.createProcessInstanceQuery().processInstanceBusinessKey("0").count());
     assertEquals(2, runtimeService.createProcessInstanceQuery().processInstanceBusinessKey("1").count());
   }
 
+  @Test
   public void testQueryByInvalidBusinessKey() {
     assertEquals(0, runtimeService.createProcessInstanceQuery().processInstanceBusinessKey("invalid").count());
 
     try {
       runtimeService.createProcessInstanceQuery().processInstanceBusinessKey(null).count();
       fail();
-    } catch(ProcessEngineException e) {
+    } catch(ProcessEngineException ignored) {
 
     }
   }
 
+  @Test
   public void testQueryByInvalidProcessInstanceId() {
     assertNull(runtimeService.createProcessInstanceQuery().processInstanceId("I do not exist").singleResult());
     assertEquals(0, runtimeService.createProcessInstanceQuery().processInstanceId("I do not exist").list().size());
   }
 
+  @Test
   @Deployment(resources = {"org/camunda/bpm/engine/test/api/runtime/superProcess.bpmn20.xml",
                            "org/camunda/bpm/engine/test/api/runtime/subProcess.bpmn20.xml"})
   public void testQueryBySuperProcessInstanceId() {
@@ -161,6 +230,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(1, query.count());
   }
 
+  @Test
   public void testQueryByInvalidSuperProcessInstanceId() {
     assertNull(runtimeService.createProcessInstanceQuery().superProcessInstanceId("invalid").singleResult());
     assertEquals(0, runtimeService.createProcessInstanceQuery().superProcessInstanceId("invalid").list().size());
@@ -168,6 +238,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
 
   @Deployment(resources = {"org/camunda/bpm/engine/test/api/runtime/superProcess.bpmn20.xml",
                            "org/camunda/bpm/engine/test/api/runtime/subProcess.bpmn20.xml"})
+  @Test
   public void testQueryBySubProcessInstanceId() {
     ProcessInstance superProcessInstance = runtimeService.startProcessInstanceByKey("subProcessQueryTest");
 
@@ -176,12 +247,14 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(superProcessInstance.getId(), runtimeService.createProcessInstanceQuery().subProcessInstanceId(subProcessInstance.getId()).singleResult().getId());
   }
 
+  @Test
   public void testQueryByInvalidSubProcessInstanceId() {
     assertNull(runtimeService.createProcessInstanceQuery().subProcessInstanceId("invalid").singleResult());
     assertEquals(0, runtimeService.createProcessInstanceQuery().subProcessInstanceId("invalid").list().size());
   }
 
   // Nested subprocess make the query complexer, hence this test
+  @Test
   @Deployment(resources = {"org/camunda/bpm/engine/test/api/runtime/superProcessWithNestedSubProcess.bpmn20.xml",
                            "org/camunda/bpm/engine/test/api/runtime/nestedSubProcess.bpmn20.xml",
                            "org/camunda/bpm/engine/test/api/runtime/subProcess.bpmn20.xml"})
@@ -196,6 +269,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
   }
 
   //Nested subprocess make the query complexer, hence this test
+  @Test
   @Deployment(resources = {"org/camunda/bpm/engine/test/api/runtime/superProcessWithNestedSubProcess.bpmn20.xml",
           "org/camunda/bpm/engine/test/api/runtime/nestedSubProcess.bpmn20.xml",
           "org/camunda/bpm/engine/test/api/runtime/subProcess.bpmn20.xml"})
@@ -209,12 +283,14 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(subProcessInstance.getId(), runtimeService.createProcessInstanceQuery().subProcessInstanceId(nestedSubProcessInstance.getId()).singleResult().getId());
   }
 
+  @Test
   public void testQueryPaging() {
     assertEquals(4, runtimeService.createProcessInstanceQuery().processDefinitionKey(PROCESS_DEFINITION_KEY).count());
     assertEquals(2, runtimeService.createProcessInstanceQuery().processDefinitionKey(PROCESS_DEFINITION_KEY).listPage(0, 2).size());
     assertEquals(3, runtimeService.createProcessInstanceQuery().processDefinitionKey(PROCESS_DEFINITION_KEY).listPage(1, 3).size());
   }
 
+  @Test
   public void testQuerySorting() {
     assertEquals(5, runtimeService.createProcessInstanceQuery().orderByProcessInstanceId().asc().list().size());
     assertEquals(5, runtimeService.createProcessInstanceQuery().orderByProcessDefinitionId().asc().list().size());
@@ -228,15 +304,16 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(4, runtimeService.createProcessInstanceQuery().processDefinitionKey(PROCESS_DEFINITION_KEY).orderByProcessInstanceId().desc().list().size());
   }
 
+  @Test
   public void testQueryInvalidSorting() {
     try {
       runtimeService.createProcessInstanceQuery().orderByProcessDefinitionId().list(); // asc - desc not called -> exception
       fail();
-    }catch (ProcessEngineException e) {}
+    }catch (ProcessEngineException ignored) {}
   }
 
-  @Deployment(resources={
-    "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
+  @Test
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
   public void testQueryStringVariable() {
     Map<String, Object> vars = new HashMap<String, Object>();
     vars.put("stringVar", "abcdef");
@@ -254,27 +331,27 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     // Test EQUAL on single string variable, should result in 2 matches
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().variableValueEquals("stringVar", "abcdef");
     List<ProcessInstance> processInstances = query.list();
-    Assert.assertNotNull(processInstances);
+    assertNotNull(processInstances);
     Assert.assertEquals(2, processInstances.size());
 
     // Test EQUAL on two string variables, should result in single match
     query = runtimeService.createProcessInstanceQuery().variableValueEquals("stringVar", "abcdef").variableValueEquals("stringVar2", "ghijkl");
     ProcessInstance resultInstance = query.singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance2.getId(), resultInstance.getId());
 
     // Test NOT_EQUAL, should return only 1 resultInstance
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueNotEquals("stringVar", "abcdef").singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     // Test GREATER_THAN, should return only matching 'azerty'
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThan("stringVar", "abcdef").singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThan("stringVar", "z").singleResult();
-    Assert.assertNull(resultInstance);
+    assertNull(resultInstance);
 
     // Test GREATER_THAN_OR_EQUAL, should return 3 results
     assertEquals(3, runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("stringVar", "abcdef").count());
@@ -323,8 +400,8 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     runtimeService.deleteProcessInstance(processInstance3.getId(), "test");
   }
 
-  @Deployment(resources={
-    "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
+  @Test
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
   public void testQueryLongVariable() {
     Map<String, Object> vars = new HashMap<String, Object>();
     vars.put("longVar", 12345L);
@@ -342,27 +419,27 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     // Query on single long variable, should result in 2 matches
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().variableValueEquals("longVar", 12345L);
     List<ProcessInstance> processInstances = query.list();
-    Assert.assertNotNull(processInstances);
+    assertNotNull(processInstances);
     Assert.assertEquals(2, processInstances.size());
 
     // Query on two long variables, should result in single match
     query = runtimeService.createProcessInstanceQuery().variableValueEquals("longVar", 12345L).variableValueEquals("longVar2", 67890L);
     ProcessInstance resultInstance = query.singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance2.getId(), resultInstance.getId());
 
     // Query with unexisting variable value
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueEquals("longVar", 999L).singleResult();
-    Assert.assertNull(resultInstance);
+    assertNull(resultInstance);
 
     // Test NOT_EQUALS
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueNotEquals("longVar", 12345L).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     // Test GREATER_THAN
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThan("longVar", 44444L).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     Assert.assertEquals(0, runtimeService.createProcessInstanceQuery().variableValueGreaterThan("longVar", 55555L).count());
@@ -370,11 +447,11 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
 
     // Test GREATER_THAN_OR_EQUAL
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("longVar", 44444L).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("longVar", 55555L).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     Assert.assertEquals(3, runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("longVar",1L).count());
@@ -402,8 +479,8 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     runtimeService.deleteProcessInstance(processInstance3.getId(), "test");
   }
 
-  @Deployment(resources={
-    "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
+  @Test
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
   public void testQueryDoubleVariable() {
     Map<String, Object> vars = new HashMap<String, Object>();
     vars.put("doubleVar", 12345.6789);
@@ -421,27 +498,27 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     // Query on single double variable, should result in 2 matches
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().variableValueEquals("doubleVar", 12345.6789);
     List<ProcessInstance> processInstances = query.list();
-    Assert.assertNotNull(processInstances);
+    assertNotNull(processInstances);
     Assert.assertEquals(2, processInstances.size());
 
     // Query on two double variables, should result in single value
     query = runtimeService.createProcessInstanceQuery().variableValueEquals("doubleVar", 12345.6789).variableValueEquals("doubleVar2", 9876.54321);
     ProcessInstance resultInstance = query.singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance2.getId(), resultInstance.getId());
 
     // Query with unexisting variable value
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueEquals("doubleVar", 9999.99).singleResult();
-    Assert.assertNull(resultInstance);
+    assertNull(resultInstance);
 
     // Test NOT_EQUALS
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueNotEquals("doubleVar", 12345.6789).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     // Test GREATER_THAN
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThan("doubleVar", 44444.4444).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     Assert.assertEquals(0, runtimeService.createProcessInstanceQuery().variableValueGreaterThan("doubleVar", 55555.5555).count());
@@ -449,11 +526,11 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
 
     // Test GREATER_THAN_OR_EQUAL
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("doubleVar", 44444.4444).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("doubleVar", 55555.5555).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     Assert.assertEquals(3, runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("doubleVar",1.234).count());
@@ -481,8 +558,8 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     runtimeService.deleteProcessInstance(processInstance3.getId(), "test");
   }
 
-  @Deployment(resources={
-    "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
+  @Test
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
   public void testQueryIntegerVariable() {
     Map<String, Object> vars = new HashMap<String, Object>();
     vars.put("integerVar", 12345);
@@ -500,27 +577,27 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     // Query on single integer variable, should result in 2 matches
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().variableValueEquals("integerVar", 12345);
     List<ProcessInstance> processInstances = query.list();
-    Assert.assertNotNull(processInstances);
+    assertNotNull(processInstances);
     Assert.assertEquals(2, processInstances.size());
 
     // Query on two integer variables, should result in single value
     query = runtimeService.createProcessInstanceQuery().variableValueEquals("integerVar", 12345).variableValueEquals("integerVar2", 67890);
     ProcessInstance resultInstance = query.singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance2.getId(), resultInstance.getId());
 
     // Query with unexisting variable value
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueEquals("integerVar", 9999).singleResult();
-    Assert.assertNull(resultInstance);
+    assertNull(resultInstance);
 
     // Test NOT_EQUALS
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueNotEquals("integerVar", 12345).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     // Test GREATER_THAN
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThan("integerVar", 44444).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     Assert.assertEquals(0, runtimeService.createProcessInstanceQuery().variableValueGreaterThan("integerVar", 55555).count());
@@ -528,11 +605,11 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
 
     // Test GREATER_THAN_OR_EQUAL
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("integerVar", 44444).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("integerVar", 55555).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     Assert.assertEquals(3, runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("integerVar",1).count());
@@ -560,8 +637,8 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     runtimeService.deleteProcessInstance(processInstance3.getId(), "test");
   }
 
-  @Deployment(resources={
-    "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
+  @Test
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
   public void testQueryShortVariable() {
     Map<String, Object> vars = new HashMap<String, Object>();
     short shortVar = 1234;
@@ -581,28 +658,28 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     // Query on single short variable, should result in 2 matches
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().variableValueEquals("shortVar", shortVar);
     List<ProcessInstance> processInstances = query.list();
-    Assert.assertNotNull(processInstances);
+    assertNotNull(processInstances);
     Assert.assertEquals(2, processInstances.size());
 
     // Query on two short variables, should result in single value
     query = runtimeService.createProcessInstanceQuery().variableValueEquals("shortVar", shortVar).variableValueEquals("shortVar2", shortVar2);
     ProcessInstance resultInstance = query.singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance2.getId(), resultInstance.getId());
 
     // Query with unexisting variable value
     short unexistingValue = (short)9999;
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueEquals("shortVar", unexistingValue).singleResult();
-    Assert.assertNull(resultInstance);
+    assertNull(resultInstance);
 
     // Test NOT_EQUALS
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueNotEquals("shortVar", (short)1234).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     // Test GREATER_THAN
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThan("shortVar", (short)4444).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     Assert.assertEquals(0, runtimeService.createProcessInstanceQuery().variableValueGreaterThan("shortVar", (short)5555).count());
@@ -610,11 +687,11 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
 
     // Test GREATER_THAN_OR_EQUAL
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("shortVar", (short)4444).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("shortVar", (short)5555).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     Assert.assertEquals(3, runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("shortVar",(short)1).count());
@@ -642,8 +719,8 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     runtimeService.deleteProcessInstance(processInstance3.getId(), "test");
   }
 
-  @Deployment(resources={
-    "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
+  @Test
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
   public void testQueryDateVariable() throws Exception {
     Map<String, Object> vars = new HashMap<String, Object>();
     Date date1 = Calendar.getInstance().getTime();
@@ -675,28 +752,28 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     // Query on single short variable, should result in 2 matches
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().variableValueEquals("dateVar", date1);
     List<ProcessInstance> processInstances = query.list();
-    Assert.assertNotNull(processInstances);
+    assertNotNull(processInstances);
     Assert.assertEquals(2, processInstances.size());
 
     // Query on two short variables, should result in single value
     query = runtimeService.createProcessInstanceQuery().variableValueEquals("dateVar", date1).variableValueEquals("dateVar2", date2);
     ProcessInstance resultInstance = query.singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance2.getId(), resultInstance.getId());
 
     // Query with unexisting variable value
     Date unexistingDate = new SimpleDateFormat("dd/MM/yyyy hh:mm:ss").parse("01/01/1989 12:00:00");
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueEquals("dateVar", unexistingDate).singleResult();
-    Assert.assertNull(resultInstance);
+    assertNull(resultInstance);
 
     // Test NOT_EQUALS
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueNotEquals("dateVar", date1).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     // Test GREATER_THAN
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThan("dateVar", nextMonth.getTime()).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     Assert.assertEquals(0, runtimeService.createProcessInstanceQuery().variableValueGreaterThan("dateVar", nextYear.getTime()).count());
@@ -704,11 +781,11 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
 
     // Test GREATER_THAN_OR_EQUAL
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("dateVar", nextMonth.getTime()).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     resultInstance = runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("dateVar", nextYear.getTime()).singleResult();
-    Assert.assertNotNull(resultInstance);
+    assertNotNull(resultInstance);
     Assert.assertEquals(processInstance3.getId(), resultInstance.getId());
 
     Assert.assertEquals(3, runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("dateVar",oneYearAgo.getTime()).count());
@@ -736,8 +813,8 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     runtimeService.deleteProcessInstance(processInstance3.getId(), "test");
   }
 
-  @Deployment(resources={
-    "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
+  @Test
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
   public void testBooleanVariable() throws Exception {
 
     // TEST EQUALS
@@ -779,36 +856,36 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
       runtimeService.createProcessInstanceQuery().variableValueGreaterThan("booleanVar", true);
       fail("Excetion expected");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("Booleans and null cannot be used in 'greater than' condition", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("Booleans and null cannot be used in 'greater than' condition"));
     }
 
     try {
       runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("booleanVar", true);
       fail("Excetion expected");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("Booleans and null cannot be used in 'greater than or equal' condition", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("Booleans and null cannot be used in 'greater than or equal' condition"));
     }
 
     try {
       runtimeService.createProcessInstanceQuery().variableValueLessThan("booleanVar", true);
       fail("Excetion expected");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("Booleans and null cannot be used in 'less than' condition", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("Booleans and null cannot be used in 'less than' condition"));
     }
 
     try {
       runtimeService.createProcessInstanceQuery().variableValueLessThanOrEqual("booleanVar", true);
       fail("Excetion expected");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("Booleans and null cannot be used in 'less than or equal' condition", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("Booleans and null cannot be used in 'less than or equal' condition"));
     }
 
     runtimeService.deleteProcessInstance(processInstance1.getId(), "test");
     runtimeService.deleteProcessInstance(processInstance2.getId(), "test");
   }
 
-  @Deployment(resources={
-    "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
+  @Test
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
   public void testQueryVariablesUpdatedToNullValue() {
     // Start process instance with different types of variables
     Map<String, Object> variables = new HashMap<String, Object>();
@@ -830,12 +907,12 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
       .variableValueEquals("dateVar", null);
 
     ProcessInstanceQuery notQuery = runtimeService.createProcessInstanceQuery()
-    .variableValueNotEquals("longVar", null)
-    .variableValueNotEquals("shortVar", null)
-    .variableValueNotEquals("integerVar", null)
-    .variableValueNotEquals("stringVar", null)
-    .variableValueNotEquals("booleanVar", null)
-    .variableValueNotEquals("dateVar", null);
+      .variableValueNotEquals("longVar", null)
+      .variableValueNotEquals("shortVar", null)
+      .variableValueNotEquals("integerVar", null)
+      .variableValueNotEquals("stringVar", null)
+      .variableValueNotEquals("booleanVar", null)
+      .variableValueNotEquals("dateVar", null);
 
     assertNull(query.singleResult());
     assertNotNull(notQuery.singleResult());
@@ -855,8 +932,8 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertNull(notQuery.singleResult());
   }
 
-  @Deployment(resources={
-    "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
+  @Test
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
   public void testQueryNullVariable() throws Exception {
     Map<String, Object> vars = new HashMap<String, Object>();
     vars.put("nullVar", null);
@@ -881,7 +958,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     // Query on null value, should return one value
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().variableValueEquals("nullVar", null);
     List<ProcessInstance> processInstances = query.list();
-    Assert.assertNotNull(processInstances);
+    assertNotNull(processInstances);
     Assert.assertEquals(1, processInstances.size());
     Assert.assertEquals(processInstance1.getId(), processInstances.get(0).getId());
 
@@ -897,35 +974,35 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
       runtimeService.createProcessInstanceQuery().variableValueGreaterThan("nullVar", null);
       fail("Excetion expected");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("Booleans and null cannot be used in 'greater than' condition", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("Booleans and null cannot be used in 'greater than' condition"));
     }
 
     try {
       runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual("nullVar", null);
       fail("Excetion expected");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("Booleans and null cannot be used in 'greater than or equal' condition", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("Booleans and null cannot be used in 'greater than or equal' condition"));
     }
 
     try {
       runtimeService.createProcessInstanceQuery().variableValueLessThan("nullVar", null);
       fail("Excetion expected");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("Booleans and null cannot be used in 'less than' condition", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("Booleans and null cannot be used in 'less than' condition"));
     }
 
     try {
       runtimeService.createProcessInstanceQuery().variableValueLessThanOrEqual("nullVar", null);
       fail("Excetion expected");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("Booleans and null cannot be used in 'less than or equal' condition", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("Booleans and null cannot be used in 'less than or equal' condition"));
     }
 
     try {
       runtimeService.createProcessInstanceQuery().variableValueLike("nullVar", null);
       fail("Excetion expected");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("Booleans and null cannot be used in 'like' condition", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("Booleans and null cannot be used in 'like' condition"));
     }
 
     runtimeService.deleteProcessInstance(processInstance1.getId(), "test");
@@ -935,8 +1012,8 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     runtimeService.deleteProcessInstance(processInstance5.getId(), "test");
   }
 
-  @Deployment(resources={
-    "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
+  @Test
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
   public void testQueryInvalidTypes() throws Exception {
     Map<String, Object> vars = new HashMap<String, Object>();
     vars.put("bytesVar", "test".getBytes());
@@ -950,7 +1027,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
         .list();
       fail("Expected exception");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("Variables of type ByteArray cannot be used to query", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("Variables of type ByteArray cannot be used to query"));
     }
 
     try {
@@ -959,59 +1036,60 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
         .list();
       fail("Expected exception");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("Object values cannot be used to query", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("Object values cannot be used to query"));
     }
 
     runtimeService.deleteProcessInstance(processInstance.getId(), "test");
   }
 
+  @Test
   public void testQueryVariablesNullNameArgument() {
     try {
       runtimeService.createProcessInstanceQuery().variableValueEquals(null, "value");
       fail("Expected exception");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("name is null", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("name is null"));
     }
     try {
       runtimeService.createProcessInstanceQuery().variableValueNotEquals(null, "value");
       fail("Expected exception");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("name is null", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("name is null"));
     }
     try {
       runtimeService.createProcessInstanceQuery().variableValueGreaterThan(null, "value");
       fail("Expected exception");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("name is null", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("name is null"));
     }
     try {
       runtimeService.createProcessInstanceQuery().variableValueGreaterThanOrEqual(null, "value");
       fail("Expected exception");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("name is null", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("name is null"));
     }
     try {
       runtimeService.createProcessInstanceQuery().variableValueLessThan(null, "value");
       fail("Expected exception");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("name is null", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("name is null"));
     }
     try {
       runtimeService.createProcessInstanceQuery().variableValueLessThanOrEqual(null, "value");
       fail("Expected exception");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("name is null", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("name is null"));
     }
     try {
       runtimeService.createProcessInstanceQuery().variableValueLike(null, "value");
       fail("Expected exception");
     } catch(ProcessEngineException ae) {
-      assertTextPresent("name is null", ae.getMessage());
+      assertThat(ae.getMessage(), containsString("name is null"));
     }
   }
 
-  @Deployment(resources={
-    "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
+  @Test
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
   public void testQueryAllVariableTypes() throws Exception {
     Map<String, Object> vars = new HashMap<String, Object>();
     vars.put("nullVar", null);
@@ -1034,16 +1112,16 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
       .variableValueEquals("shortVar", (short) 123);
 
     List<ProcessInstance> processInstances = query.list();
-    Assert.assertNotNull(processInstances);
+    assertNotNull(processInstances);
     Assert.assertEquals(1, processInstances.size());
     Assert.assertEquals(processInstance.getId(), processInstances.get(0).getId());
 
     runtimeService.deleteProcessInstance(processInstance.getId(), "test");
   }
 
-  @Deployment(resources={
-    "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
-    public void testClashingValues() throws Exception {
+  @Test
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
+  public void testClashingValues() throws Exception {
       Map<String, Object> vars = new HashMap<String, Object>();
       vars.put("var", 1234L);
 
@@ -1066,6 +1144,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
       runtimeService.deleteProcessInstance(processInstance2.getId(), "test");
   }
 
+  @Test
   public void testQueryByProcessInstanceIds() {
     Set<String> processInstanceIds = new HashSet<String>(this.processInstanceIds);
 
@@ -1084,24 +1163,27 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     }
   }
 
+  @Test
   public void testQueryByProcessInstanceIdsEmpty() {
     try {
       runtimeService.createProcessInstanceQuery().processInstanceIds(new HashSet<String>());
       fail("ProcessEngineException expected");
     } catch (ProcessEngineException re) {
-      assertTextPresent("Set of process instance ids is empty", re.getMessage());
+      assertThat(re.getMessage(), containsString("Set of process instance ids is empty"));
     }
   }
 
+  @Test
   public void testQueryByProcessInstanceIdsNull() {
     try {
       runtimeService.createProcessInstanceQuery().processInstanceIds(null);
       fail("ProcessEngineException expected");
     } catch (ProcessEngineException re) {
-      assertTextPresent("Set of process instance ids is null", re.getMessage());
+      assertThat(re.getMessage(), containsString("Set of process instance ids is null"));
     }
   }
 
+  @Test
   public void testQueryByActive() throws Exception {
     ProcessInstanceQuery processInstanceQuery = runtimeService.createProcessInstanceQuery();
 
@@ -1116,7 +1198,8 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(1, processInstanceQuery.active().count());
   }
 
-  public void testQueryBySuspeded() throws Exception {
+  @Test
+  public void testQueryBySuspended() throws Exception {
     ProcessInstanceQuery processInstanceQuery = runtimeService.createProcessInstanceQuery();
 
     assertEquals(0, processInstanceQuery.suspended().count());
@@ -1130,9 +1213,11 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(4, processInstanceQuery.suspended().count());
   }
 
+  @Test
   public void testNativeQuery() {
+    String tablePrefix = engineRule.getProcessEngineConfiguration().getDatabaseTablePrefix();
     // just test that the query will be constructed and executed, details are tested in the TaskQueryTest
-    assertEquals("ACT_RU_EXECUTION", managementService.getTableName(ProcessInstance.class));
+    assertEquals(tablePrefix + "ACT_RU_EXECUTION", managementService.getTableName(ProcessInstance.class));
 
     long piCount = runtimeService.createProcessInstanceQuery().count();
 
@@ -1140,15 +1225,17 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(piCount, runtimeService.createNativeProcessInstanceQuery().sql("SELECT count(*) FROM " + managementService.getTableName(ProcessInstance.class)).count());
   }
 
+  @Test
   public void testNativeQueryPaging() {
     assertEquals(5, runtimeService.createNativeProcessInstanceQuery().sql("SELECT * FROM " + managementService.getTableName(ProcessInstance.class)).listPage(0, 5).size());
   }
 
+  @Test
   @Deployment(resources={"org/camunda/bpm/engine/test/api/runtime/failingProcessCreateOneIncident.bpmn20.xml"})
   public void testQueryByIncidentId() {
     ProcessInstance processInstance = runtimeService.startProcessInstanceByKey("failingProcess");
 
-    executeAvailableJobs();
+    testHelper.executeAvailableJobs();
 
     List<Incident> incidentList = runtimeService.createIncidentQuery().list();
     assertEquals(1, incidentList.size());
@@ -1162,6 +1249,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(1, processInstanceList.size());
   }
 
+  @Test
   public void testQueryByInvalidIncidentId() {
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery();
 
@@ -1170,14 +1258,15 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     try {
       query.incidentId(null);
       fail();
-    } catch (ProcessEngineException e) {}
+    } catch (ProcessEngineException ignored) {}
   }
 
+  @Test
   @Deployment(resources={"org/camunda/bpm/engine/test/api/runtime/failingProcessCreateOneIncident.bpmn20.xml"})
   public void testQueryByIncidentType() {
     ProcessInstance processInstance = runtimeService.startProcessInstanceByKey("failingProcess");
 
-    executeAvailableJobs();
+    testHelper.executeAvailableJobs();
 
     List<Incident> incidentList = runtimeService.createIncidentQuery().list();
     assertEquals(1, incidentList.size());
@@ -1191,6 +1280,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(1, processInstanceList.size());
   }
 
+  @Test
   public void testQueryByInvalidIncidentType() {
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery();
 
@@ -1199,14 +1289,15 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     try {
       query.incidentType(null);
       fail();
-    } catch (ProcessEngineException e) {}
+    } catch (ProcessEngineException ignored) {}
   }
 
+  @Test
   @Deployment(resources={"org/camunda/bpm/engine/test/api/runtime/failingProcessCreateOneIncident.bpmn20.xml"})
   public void testQueryByIncidentMessage() {
     ProcessInstance processInstance = runtimeService.startProcessInstanceByKey("failingProcess");
 
-    executeAvailableJobs();
+    testHelper.executeAvailableJobs();
 
     List<Incident> incidentList = runtimeService.createIncidentQuery().list();
     assertEquals(1, incidentList.size());
@@ -1220,6 +1311,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(1, processInstanceList.size());
   }
 
+  @Test
   public void testQueryByInvalidIncidentMessage() {
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery();
 
@@ -1228,14 +1320,15 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     try {
       query.incidentMessage(null);
       fail();
-    } catch (ProcessEngineException e) {}
+    } catch (ProcessEngineException ignored) {}
   }
 
+  @Test
   @Deployment(resources={"org/camunda/bpm/engine/test/api/runtime/failingProcessCreateOneIncident.bpmn20.xml"})
   public void testQueryByIncidentMessageLike() {
     runtimeService.startProcessInstanceByKey("failingProcess");
 
-    executeAvailableJobs();
+    testHelper.executeAvailableJobs();
 
     List<Incident> incidentList = runtimeService.createIncidentQuery().list();
     assertEquals(1, incidentList.size());
@@ -1247,6 +1340,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(1, processInstanceList.size());
   }
 
+  @Test
   public void testQueryByInvalidIncidentMessageLike() {
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery();
 
@@ -1255,14 +1349,15 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     try {
       query.incidentMessageLike(null);
       fail();
-    } catch (ProcessEngineException e) {}
+    } catch (ProcessEngineException ignored) {}
   }
 
+  @Test
   @Deployment(resources={"org/camunda/bpm/engine/test/api/runtime/failingSubProcessCreateOneIncident.bpmn20.xml"})
   public void testQueryByIncidentIdInSubProcess() {
     ProcessInstance processInstance = runtimeService.startProcessInstanceByKey("failingSubProcess");
 
-    executeAvailableJobs();
+    testHelper.executeAvailableJobs();
 
     List<Incident> incidentList = runtimeService.createIncidentQuery().list();
     assertEquals(1, incidentList.size());
@@ -1277,11 +1372,12 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(processInstance.getId(), processInstanceList.get(0).getId());
   }
 
+  @Test
   @Deployment(resources={"org/camunda/bpm/engine/test/api/runtime/failingSubProcessCreateOneIncident.bpmn20.xml"})
   public void testQueryByIncidentTypeInSubProcess() {
     ProcessInstance processInstance = runtimeService.startProcessInstanceByKey("failingSubProcess");
 
-    executeAvailableJobs();
+    testHelper.executeAvailableJobs();
 
     List<Incident> incidentList = runtimeService.createIncidentQuery().list();
     assertEquals(1, incidentList.size());
@@ -1296,11 +1392,12 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(processInstance.getId(), processInstanceList.get(0).getId());
   }
 
+  @Test
   @Deployment(resources={"org/camunda/bpm/engine/test/api/runtime/failingSubProcessCreateOneIncident.bpmn20.xml"})
   public void testQueryByIncidentMessageInSubProcess() {
     ProcessInstance processInstance = runtimeService.startProcessInstanceByKey("failingSubProcess");
 
-    executeAvailableJobs();
+    testHelper.executeAvailableJobs();
 
     List<Incident> incidentList = runtimeService.createIncidentQuery().list();
     assertEquals(1, incidentList.size());
@@ -1315,11 +1412,12 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(processInstance.getId(), processInstanceList.get(0).getId());
   }
 
+  @Test
   @Deployment(resources={"org/camunda/bpm/engine/test/api/runtime/failingSubProcessCreateOneIncident.bpmn20.xml"})
   public void testQueryByIncidentMessageLikeInSubProcess() {
     ProcessInstance processInstance = runtimeService.startProcessInstanceByKey("failingSubProcess");
 
-    executeAvailableJobs();
+    testHelper.executeAvailableJobs();
 
     List<Incident> incidentList = runtimeService.createIncidentQuery().list();
     assertEquals(1, incidentList.size());
@@ -1332,6 +1430,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(processInstance.getId(), processInstanceList.get(0).getId());
   }
 
+  @Test
   @Deployment(resources = {
       "org/camunda/bpm/engine/test/api/cmmn/oneProcessTaskCase.cmmn",
       "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"
@@ -1365,6 +1464,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(caseInstanceId, processInstance.getCaseInstanceId());
   }
 
+  @Test
   public void testQueryByInvalidCaseInstanceId() {
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery();
 
@@ -1375,10 +1475,11 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     try {
       query.caseInstanceId(null);
       fail("The passed case instance should not be null.");
-    } catch (Exception e) {}
+    } catch (Exception ignored) {}
 
   }
 
+  @Test
   @Deployment(resources = {
       "org/camunda/bpm/engine/test/api/runtime/superCase.cmmn",
       "org/camunda/bpm/engine/test/api/runtime/superProcessWithCallActivityInsideSubProcess.bpmn20.xml",
@@ -1417,6 +1518,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(caseInstanceId, secondProcessInstance.getCaseInstanceId());
   }
 
+  @Test
   @Deployment(resources = "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml")
   public void testProcessVariableValueEqualsNumber() throws Exception {
     // long
@@ -1441,7 +1543,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
 
     // untyped null (should not match)
     runtimeService.startProcessInstanceByKey("oneTaskProcess",
-        Collections.<String, Object>singletonMap("var", null));
+        Collections.singletonMap("var", null));
 
     // typed null (should not match)
     runtimeService.startProcessInstanceByKey("oneTaskProcess",
@@ -1458,6 +1560,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(1, runtimeService.createProcessInstanceQuery().variableValueEquals("var", Variables.numberValue(null)).count());
   }
 
+  @Test
   @Deployment(resources = "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml")
   public void testProcessVariableValueNumberComparison() throws Exception {
     // long
@@ -1482,7 +1585,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
 
     // untyped null
     runtimeService.startProcessInstanceByKey("oneTaskProcess",
-        Collections.<String, Object>singletonMap("var", null));
+        Collections.singletonMap("var", null));
 
     // typed null
     runtimeService.startProcessInstanceByKey("oneTaskProcess",
@@ -1498,6 +1601,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(4, runtimeService.createProcessInstanceQuery().variableValueLessThanOrEqual("var", Variables.numberValue(123)).count());
   }
 
+  @Test
   @Deployment(resources = {"org/camunda/bpm/engine/test/api/cmmn/oneProcessTaskCase.cmmn"})
   public void testQueryBySuperCaseInstanceId() {
     String superCaseInstanceId = caseService.createCaseInstanceByKey("oneProcessTaskCase").getId();
@@ -1521,6 +1625,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertNotNull(subProcessInstance);
   }
 
+  @Test
   public void testQueryByInvalidSuperCaseInstanceId() {
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery();
 
@@ -1535,6 +1640,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     }
   }
 
+  @Test
   @Deployment(resources = {
       "org/camunda/bpm/engine/test/api/runtime/superProcessWithCaseCallActivity.bpmn20.xml",
       "org/camunda/bpm/engine/test/api/cmmn/oneTaskCase.cmmn" })
@@ -1559,6 +1665,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(superProcessInstanceId, superProcessInstance.getId());
   }
 
+  @Test
   @Deployment(resources = {
       "org/camunda/bpm/engine/test/api/runtime/superProcessWithCaseCallActivityInsideSubProcess.bpmn20.xml",
       "org/camunda/bpm/engine/test/api/cmmn/oneTaskCase.cmmn" })
@@ -1583,6 +1690,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(superProcessInstanceId, superProcessInstance.getId());
   }
 
+  @Test
   public void testQueryByInvalidSubCaseInstanceId() {
     ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery();
 
@@ -1597,8 +1705,8 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     }
   }
 
-  @Deployment(resources={
-  "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
+  @Test
+  @Deployment(resources={"org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
   public void testQueryNullValue() {
     // typed null
     ProcessInstance processInstance1 = runtimeService.startProcessInstanceByKey("oneTaskProcess",
@@ -1639,6 +1747,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     verifyResultContainsExactly(instances, asSet(processInstance1.getId(), processInstance2.getId(), processInstance4.getId()));
   }
 
+  @Test
   public void testQueryByDeploymentId() {
     // given
     String firstDeploymentId = repositoryService
@@ -1673,6 +1782,7 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
 
   }
 
+  @Test
   public void testQueryByInvalidDeploymentId() {
     assertEquals(0, runtimeService.createProcessInstanceQuery().deploymentId("invalid").count());
 
@@ -1684,17 +1794,236 @@ public class ProcessInstanceQueryTest extends PluggableProcessEngineTestCase {
     }
   }
 
+  @Test
+  public void testQueryByNullActivityId() {
+    try {
+      runtimeService.createProcessInstanceQuery()
+        .activityIdIn((String) null);
+      fail("exception expected");
+    }
+    catch (NullValueException e) {
+        assertThat(e.getMessage(), containsString("activity ids contains null value"));
+    }
+  }
+
+  @Test
+  public void testQueryByNullActivityIds() {
+    try {
+      runtimeService.createProcessInstanceQuery()
+        .activityIdIn((String[]) null);
+      fail("exception expected");
+    }
+    catch (NullValueException e) {
+      assertThat(e.getMessage(), containsString("activity ids is null"));
+    }
+  }
+
+  @Test
+  public void testQueryByUnknownActivityId() {
+    ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery()
+      .activityIdIn("unknown");
+
+    assertNoProcessInstancesReturned(query);
+  }
+
+  @Test
+  public void testQueryByLeafActivityId() {
+    // given
+    ProcessDefinition oneTaskDefinition = testHelper.deployAndGetDefinition(ProcessModels.ONE_TASK_PROCESS);
+    ProcessDefinition gatewaySubProcessDefinition = testHelper.deployAndGetDefinition(FORK_JOIN_SUB_PROCESS_MODEL);
+
+    // when
+    ProcessInstance oneTaskInstance1 = runtimeService.startProcessInstanceById(oneTaskDefinition.getId());
+    ProcessInstance oneTaskInstance2 = runtimeService.startProcessInstanceById(oneTaskDefinition.getId());
+    ProcessInstance gatewaySubProcessInstance1 = runtimeService.startProcessInstanceById(gatewaySubProcessDefinition.getId());
+    ProcessInstance gatewaySubProcessInstance2 = runtimeService.startProcessInstanceById(gatewaySubProcessDefinition.getId());
+
+    Task task = engineRule.getTaskService().createTaskQuery()
+      .processInstanceId(gatewaySubProcessInstance2.getId())
+      .taskName("completeMe")
+      .singleResult();
+    engineRule.getTaskService().complete(task.getId());
+
+    // then
+    ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().activityIdIn("userTask");
+    assertReturnedProcessInstances(query, oneTaskInstance1, oneTaskInstance2);
+
+    query = runtimeService.createProcessInstanceQuery().activityIdIn("userTask1", "userTask2");
+    assertReturnedProcessInstances(query, gatewaySubProcessInstance1, gatewaySubProcessInstance2);
+
+    query = runtimeService.createProcessInstanceQuery().activityIdIn("userTask", "userTask1");
+    assertReturnedProcessInstances(query, oneTaskInstance1, oneTaskInstance2, gatewaySubProcessInstance1);
+
+    query = runtimeService.createProcessInstanceQuery().activityIdIn("userTask", "userTask1", "userTask2");
+    assertReturnedProcessInstances(query, oneTaskInstance1, oneTaskInstance2, gatewaySubProcessInstance1, gatewaySubProcessInstance2);
+
+    query = runtimeService.createProcessInstanceQuery().activityIdIn("join");
+    assertReturnedProcessInstances(query, gatewaySubProcessInstance2);
+  }
+
+  @Test
+  public void testQueryByNonLeafActivityId() {
+    // given
+    ProcessDefinition processDefinition = testHelper.deployAndGetDefinition(FORK_JOIN_SUB_PROCESS_MODEL);
+
+    // when
+    runtimeService.startProcessInstanceById(processDefinition.getId());
+
+    // then
+    ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().activityIdIn("subProcess", "fork");
+    assertNoProcessInstancesReturned(query);
+  }
+
+  @Test
+  public void testQueryByAsyncBeforeActivityId() {
+    // given
+    ProcessDefinition testProcess = testHelper.deployAndGetDefinition(ProcessModels.newModel()
+      .startEvent("start").camundaAsyncBefore()
+      .subProcess("subProcess").camundaAsyncBefore()
+      .embeddedSubProcess()
+        .startEvent()
+        .serviceTask("task").camundaAsyncBefore().camundaExpression("${true}")
+        .endEvent()
+      .subProcessDone()
+      .endEvent("end").camundaAsyncBefore()
+      .done()
+    );
+
+    // when
+    ProcessInstance instanceBeforeStart = runtimeService.startProcessInstanceById(testProcess.getId());
+    ProcessInstance instanceBeforeSubProcess = runtimeService.startProcessInstanceById(testProcess.getId());
+    executeJobForProcessInstance(instanceBeforeSubProcess);
+    ProcessInstance instanceBeforeTask = runtimeService.startProcessInstanceById(testProcess.getId());
+    executeJobForProcessInstance(instanceBeforeTask);
+    executeJobForProcessInstance(instanceBeforeTask);
+    ProcessInstance instanceBeforeEnd = runtimeService.startProcessInstanceById(testProcess.getId());
+    executeJobForProcessInstance(instanceBeforeEnd);
+    executeJobForProcessInstance(instanceBeforeEnd);
+    executeJobForProcessInstance(instanceBeforeEnd);
+
+    // then
+    ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().activityIdIn("start");
+    assertReturnedProcessInstances(query, instanceBeforeStart);
+
+    query = runtimeService.createProcessInstanceQuery().activityIdIn("subProcess");
+    assertReturnedProcessInstances(query, instanceBeforeSubProcess);
+
+    query = runtimeService.createProcessInstanceQuery().activityIdIn("task");
+    assertReturnedProcessInstances(query, instanceBeforeTask);
+
+    query = runtimeService.createProcessInstanceQuery().activityIdIn("end");
+    assertReturnedProcessInstances(query, instanceBeforeEnd);
+  }
+
+  @Test
+  public void testQueryByAsyncAfterActivityId() {
+    // given
+    ProcessDefinition testProcess = testHelper.deployAndGetDefinition(ProcessModels.newModel()
+      .startEvent("start").camundaAsyncAfter()
+      .subProcess("subProcess").camundaAsyncAfter()
+      .embeddedSubProcess()
+        .startEvent()
+        .serviceTask("task").camundaAsyncAfter().camundaExpression("${true}")
+        .endEvent()
+      .subProcessDone()
+      .endEvent("end").camundaAsyncAfter()
+      .done()
+    );
+
+    // when
+    ProcessInstance instanceAfterStart = runtimeService.startProcessInstanceById(testProcess.getId());
+    ProcessInstance instanceAfterTask = runtimeService.startProcessInstanceById(testProcess.getId());
+    executeJobForProcessInstance(instanceAfterTask);
+    ProcessInstance instanceAfterSubProcess = runtimeService.startProcessInstanceById(testProcess.getId());
+    executeJobForProcessInstance(instanceAfterSubProcess);
+    executeJobForProcessInstance(instanceAfterSubProcess);
+    ProcessInstance instanceAfterEnd = runtimeService.startProcessInstanceById(testProcess.getId());
+    executeJobForProcessInstance(instanceAfterEnd);
+    executeJobForProcessInstance(instanceAfterEnd);
+    executeJobForProcessInstance(instanceAfterEnd);
+
+    // then
+    ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().activityIdIn("start");
+    assertReturnedProcessInstances(query, instanceAfterStart);
+
+    query = runtimeService.createProcessInstanceQuery().activityIdIn("task");
+    assertReturnedProcessInstances(query, instanceAfterTask);
+
+    query = runtimeService.createProcessInstanceQuery().activityIdIn("subProcess");
+    assertReturnedProcessInstances(query, instanceAfterSubProcess);
+
+    query = runtimeService.createProcessInstanceQuery().activityIdIn("end");
+    assertReturnedProcessInstances(query, instanceAfterEnd);
+  }
+
+  @Test
+  public void testQueryByActivityIdBeforeCompensation() {
+    // given
+    ProcessDefinition testProcess = testHelper.deployAndGetDefinition(CompensationModels.COMPENSATION_ONE_TASK_SUBPROCESS_MODEL);
+
+    // when
+    runtimeService.startProcessInstanceById(testProcess.getId());
+    testHelper.completeTask("userTask1");
+
+    // then
+    ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().activityIdIn("subProcess");
+    assertNoProcessInstancesReturned(query);
+  }
+
+  @Test
+  public void testQueryByActivityIdDuringCompensation() {
+    // given
+    ProcessDefinition testProcess = testHelper.deployAndGetDefinition(CompensationModels.COMPENSATION_ONE_TASK_SUBPROCESS_MODEL);
+
+    // when
+    ProcessInstance processInstance = runtimeService.startProcessInstanceById(testProcess.getId());
+    testHelper.completeTask("userTask1");
+    testHelper.completeTask("userTask2");
+
+    // then
+    ProcessInstanceQuery query = runtimeService.createProcessInstanceQuery().activityIdIn("subProcess");
+    assertReturnedProcessInstances(query, processInstance);
+
+    query = runtimeService.createProcessInstanceQuery().activityIdIn("compensationEvent");
+    assertReturnedProcessInstances(query, processInstance);
+
+    query = runtimeService.createProcessInstanceQuery().activityIdIn("compensationHandler");
+    assertReturnedProcessInstances(query, processInstance);
+  }
+
+  protected void executeJobForProcessInstance(ProcessInstance processInstance) {
+    Job job = managementService.createJobQuery().processInstanceId(processInstance.getId()).singleResult();
+    managementService.executeJob(job.getId());
+  }
+
   protected <T> Set<T> asSet(T... elements) {
     return new HashSet<T>(Arrays.asList(elements));
   }
 
+  protected void assertNoProcessInstancesReturned(ProcessInstanceQuery query) {
+    assertEquals(0, query.count());
+    assertEquals(0, query.list().size());
+  }
+
+  protected void assertReturnedProcessInstances(ProcessInstanceQuery query, ProcessInstance... processInstances) {
+    int expectedSize = processInstances.length;
+    assertEquals(expectedSize, query.count());
+    assertEquals(expectedSize, query.list().size());
+
+    verifyResultContainsExactly(query.list(), collectProcessInstanceIds(Arrays.asList(processInstances)));
+  }
+
   protected void verifyResultContainsExactly(List<ProcessInstance> instances, Set<String> processInstanceIds) {
+    Set<String> retrievedInstanceIds = collectProcessInstanceIds(instances);
+    assertEquals(processInstanceIds, retrievedInstanceIds);
+  }
+
+  protected Set<String> collectProcessInstanceIds(List<ProcessInstance> instances) {
     Set<String> retrievedInstanceIds = new HashSet<String>();
     for (ProcessInstance instance : instances) {
       retrievedInstanceIds.add(instance.getId());
     }
-
-    assertEquals(processInstanceIds, retrievedInstanceIds);
+    return retrievedInstanceIds;
   }
 
 }

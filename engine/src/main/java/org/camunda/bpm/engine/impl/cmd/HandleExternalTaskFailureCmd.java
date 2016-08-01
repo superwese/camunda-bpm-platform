@@ -12,63 +12,59 @@
  */
 package org.camunda.bpm.engine.impl.cmd;
 
-import org.camunda.bpm.engine.BadUserRequestException;
-import org.camunda.bpm.engine.exception.NotFoundException;
-import org.camunda.bpm.engine.impl.interceptor.Command;
-import org.camunda.bpm.engine.impl.interceptor.CommandContext;
-import org.camunda.bpm.engine.impl.persistence.entity.AuthorizationManager;
 import org.camunda.bpm.engine.impl.persistence.entity.ExternalTaskEntity;
 import org.camunda.bpm.engine.impl.util.EnsureUtil;
 
 /**
  * @author Thorben Lindhauer
- *
+ * @author Christopher Zell
+ * @author Askar Akhmerov
  */
-public class HandleExternalTaskFailureCmd implements Command<Void> {
+public class HandleExternalTaskFailureCmd extends HandleExternalTaskCmd {
 
-  protected String externalTaskId;
-  protected String workerId;
   protected String errorMessage;
+  protected String errorDetails;
   protected long retryDuration;
   protected int retries;
 
   public HandleExternalTaskFailureCmd(String externalTaskId, String workerId,
-      String errorMessage, int retries, long retryDuration) {
-    this.externalTaskId = externalTaskId;
-    this.workerId = workerId;
+                                      String errorMessage, int retries, long retryDuration) {
+    this(externalTaskId,workerId,errorMessage,null,retries,retryDuration);
+  }
+
+  /**
+   * Overloaded constructor to support short and full error messages
+   *
+   * @param externalTaskId
+   * @param workerId
+   * @param errorMessage
+   * @param errorDetails
+   * @param retries
+   * @param retryDuration
+   */
+  public HandleExternalTaskFailureCmd(String externalTaskId, String workerId,
+                                      String errorMessage, String errorDetails, int retries, long retryDuration) {
+    super(externalTaskId, workerId);
     this.errorMessage = errorMessage;
+    this.errorDetails = errorDetails;
     this.retries = retries;
     this.retryDuration = retryDuration;
   }
 
-  public Void execute(CommandContext commandContext) {
-    validateInput();
-
-    ExternalTaskEntity externalTask = commandContext.getExternalTaskManager().findExternalTaskById(externalTaskId);
-    EnsureUtil.ensureNotNull(NotFoundException.class,
-        "Cannot find external task with id " + externalTaskId, "externalTask", externalTask);
-
-    if (!workerId.equals(externalTask.getWorkerId())) {
-      throw new BadUserRequestException("Failure of External Task " + externalTaskId + " cannot be reported by worker '" + workerId
-          + "'. It is locked by worker '" + externalTask.getWorkerId() + "'.");
-    }
-
-    AuthorizationManager authorizationManager = commandContext.getAuthorizationManager();
-    authorizationManager.checkUpdateProcessInstanceById(externalTask.getProcessInstanceId());
-
-    externalTask.failed(errorMessage, retries, retryDuration);
-
-    return null;
+  @Override
+  public void execute(ExternalTaskEntity externalTask) {
+    externalTask.failed(errorMessage, errorDetails, retries, retryDuration);
   }
 
+  @Override
   protected void validateInput() {
-    EnsureUtil.ensureNotNull("externalTaskId", externalTaskId);
-    EnsureUtil.ensureNotNull("workerId", workerId);
-
+    super.validateInput();
     EnsureUtil.ensureGreaterThanOrEqual("retries", retries, 0);
     EnsureUtil.ensureGreaterThanOrEqual("retryDuration", retryDuration, 0);
-
   }
 
-
+  @Override
+  public String getErrorMessageOnWrongWorkerAccess() {
+    return "Failure of External Task " + externalTaskId + " cannot be reported by worker '" + workerId;
+  }
 }

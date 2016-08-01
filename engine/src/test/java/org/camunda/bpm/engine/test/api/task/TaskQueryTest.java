@@ -27,6 +27,8 @@ import static org.camunda.bpm.engine.test.api.runtime.TestOrderingUtil.taskByPri
 import static org.camunda.bpm.engine.test.api.runtime.TestOrderingUtil.taskByProcessInstanceId;
 import static org.camunda.bpm.engine.test.api.runtime.TestOrderingUtil.verifySortingAndCount;
 import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.core.Is.is;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
 import java.text.ParseException;
@@ -49,7 +51,6 @@ import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.exception.NullValueException;
 import org.camunda.bpm.engine.filter.Filter;
 import org.camunda.bpm.engine.impl.TaskQueryImpl;
-import org.camunda.bpm.engine.impl.persistence.entity.ExecutionEntity;
 import org.camunda.bpm.engine.impl.persistence.entity.TaskEntity;
 import org.camunda.bpm.engine.impl.persistence.entity.VariableInstanceEntity;
 import org.camunda.bpm.engine.impl.test.PluggableProcessEngineTestCase;
@@ -218,6 +219,51 @@ public class TaskQueryTest extends PluggableProcessEngineTestCase {
     }
   }
 
+
+  /**
+   * CAM-6363
+   *
+   * Verify that search by name returns case insensitive results
+   */
+  public void testTaskQueryLookupByNameCaseInsensitive() {
+    TaskQuery query = taskService.createTaskQuery();
+    query.taskName("testTask");
+
+
+    List<Task> tasks = query.list();
+    assertNotNull(tasks);
+    assertThat(tasks.size(),is(6));
+
+    query = taskService.createTaskQuery();
+    query.taskName("TeStTaSk");
+
+    tasks = query.list();
+    assertNotNull(tasks);
+    assertThat(tasks.size(),is(6));
+  }
+
+  /**
+   * CAM-6165
+   *
+   * Verify that search by name like returns case insensitive results
+   */
+  public void testTaskQueryLookupByNameLikeCaseInsensitive() {
+    TaskQuery query = taskService.createTaskQuery();
+    query.taskNameLike("%task%");
+
+
+    List<Task> tasks = query.list();
+    assertNotNull(tasks);
+    assertThat(tasks.size(),is(10));
+
+    query = taskService.createTaskQuery();
+    query.taskNameLike("%Task%");
+
+    tasks = query.list();
+    assertNotNull(tasks);
+    assertThat(tasks.size(),is(10));
+  }
+
   public void testQueryByDescriptionLike() {
     TaskQuery query = taskService.createTaskQuery().taskDescriptionLike("%gonzo%");
     assertNotNull(query.singleResult());
@@ -327,6 +373,12 @@ public class TaskQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(10, query.list().size());
   }
 
+  public void testQueryByAssigned() {
+    TaskQuery query = taskService.createTaskQuery().taskAssigned();
+    assertEquals(2, query.count());
+    assertEquals(2, query.list().size());
+  }
+
   public void testQueryByCandidateUser() {
     // kermit is candidate for 12 tasks, two of them are already assigned
     TaskQuery query = taskService.createTaskQuery().taskCandidateUser("kermit");
@@ -424,6 +476,26 @@ public class TaskQueryTest extends PluggableProcessEngineTestCase {
     query = taskService.createTaskQuery().taskCandidateGroup("sales").includeAssignedTasks();
     assertEquals(0, query.count());
     assertEquals(0, query.list().size());
+  }
+
+  public void testQueryWithCandidateGroups() {
+    // test withCandidateGroups
+    TaskQuery query = taskService.createTaskQuery().withCandidateGroups();
+    assertEquals(4, query.count());
+    assertEquals(4, query.list().size());
+
+    assertEquals(5, query.includeAssignedTasks().count());
+    assertEquals(5, query.includeAssignedTasks().list().size());
+  }
+
+  public void testQueryWithoutCandidateGroups() {
+    // test withoutCandidateGroups
+    TaskQuery query = taskService.createTaskQuery().withoutCandidateGroups();
+    assertEquals(6, query.count());
+    assertEquals(6, query.list().size());
+
+    assertEquals(7, query.includeAssignedTasks().count());
+    assertEquals(7, query.includeAssignedTasks().list().size());
   }
 
   public void testQueryByNullCandidateGroup() {
@@ -1531,9 +1603,8 @@ public class TaskQueryTest extends PluggableProcessEngineTestCase {
   public void testQueryByActivityInstanceId() throws Exception {
     ProcessInstance processInstance = runtimeService.startProcessInstanceByKey("oneTaskProcess");
 
-    assertTrue(processInstance instanceof ExecutionEntity);
-    ExecutionEntity execution = (ExecutionEntity) processInstance;
-    String activityInstanceId = execution.getActivityInstanceId();
+    String activityInstanceId = runtimeService.getActivityInstance(processInstance.getId())
+                                              .getChildActivityInstances()[0].getId();
 
     assertEquals(1, taskService.createTaskQuery().activityInstanceIdIn(activityInstanceId).list().size());
   }
@@ -1542,15 +1613,13 @@ public class TaskQueryTest extends PluggableProcessEngineTestCase {
   public void testQueryByMultipleActivityInstanceIds() throws Exception {
     ProcessInstance processInstance1 = runtimeService.startProcessInstanceByKey("oneTaskProcess");
 
-    assertTrue(processInstance1 instanceof ExecutionEntity);
-    ExecutionEntity execution1 = (ExecutionEntity) processInstance1;
-    String activityInstanceId1 = execution1.getActivityInstanceId();
+    String activityInstanceId1 = runtimeService.getActivityInstance(processInstance1.getId())
+                                              .getChildActivityInstances()[0].getId();
 
     ProcessInstance processInstance2 = runtimeService.startProcessInstanceByKey("oneTaskProcess");
 
-    assertTrue(processInstance2 instanceof ExecutionEntity);
-    ExecutionEntity execution2 = (ExecutionEntity) processInstance2;
-    String activityInstanceId2 = execution2.getActivityInstanceId();
+    String activityInstanceId2 = runtimeService.getActivityInstance(processInstance2.getId())
+                                              .getChildActivityInstances()[0].getId();
 
     List<Task> result1 = taskService.createTaskQuery().activityInstanceIdIn(activityInstanceId1).list();
     assertEquals(1, result1.size());
@@ -1723,12 +1792,13 @@ public class TaskQueryTest extends PluggableProcessEngineTestCase {
   }
 
   public void testNativeQuery() {
-    assertEquals("ACT_RU_TASK", managementService.getTableName(Task.class));
-    assertEquals("ACT_RU_TASK", managementService.getTableName(TaskEntity.class));
+    String tablePrefix = processEngineConfiguration.getDatabaseTablePrefix();
+    assertEquals(tablePrefix + "ACT_RU_TASK", managementService.getTableName(Task.class));
+    assertEquals(tablePrefix + "ACT_RU_TASK", managementService.getTableName(TaskEntity.class));
     assertEquals(12, taskService.createNativeTaskQuery().sql("SELECT * FROM " + managementService.getTableName(Task.class)).list().size());
     assertEquals(12, taskService.createNativeTaskQuery().sql("SELECT count(*) FROM " + managementService.getTableName(Task.class)).count());
 
-    assertEquals(144, taskService.createNativeTaskQuery().sql("SELECT count(*) FROM ACT_RU_TASK T1, ACT_RU_TASK T2").count());
+    assertEquals(144, taskService.createNativeTaskQuery().sql("SELECT count(*) FROM " + tablePrefix + "ACT_RU_TASK T1, " + tablePrefix + "ACT_RU_TASK T2").count());
 
     // join task and variable instances
     assertEquals(1, taskService.createNativeTaskQuery().sql("SELECT count(*) FROM " + managementService.getTableName(Task.class) + " T1, "+managementService.getTableName(VariableInstanceEntity.class)+" V1 WHERE V1.TASK_ID_ = T1.ID_").count());
@@ -1737,7 +1807,7 @@ public class TaskQueryTest extends PluggableProcessEngineTestCase {
     assertEquals("gonzoTask", tasks.get(0).getName());
 
     // select with distinct
-    assertEquals(12, taskService.createNativeTaskQuery().sql("SELECT DISTINCT T1.* FROM ACT_RU_TASK T1").list().size());
+    assertEquals(12, taskService.createNativeTaskQuery().sql("SELECT DISTINCT T1.* FROM " + tablePrefix + "ACT_RU_TASK T1").list().size());
 
     assertEquals(1, taskService.createNativeTaskQuery().sql("SELECT count(*) FROM " + managementService.getTableName(Task.class) + " T WHERE T.NAME_ = 'gonzoTask'").count());
     assertEquals(1, taskService.createNativeTaskQuery().sql("SELECT * FROM " + managementService.getTableName(Task.class) + " T WHERE T.NAME_ = 'gonzoTask'").list().size());
@@ -1747,8 +1817,9 @@ public class TaskQueryTest extends PluggableProcessEngineTestCase {
   }
 
   public void testNativeQueryPaging() {
-    assertEquals("ACT_RU_TASK", managementService.getTableName(Task.class));
-    assertEquals("ACT_RU_TASK", managementService.getTableName(TaskEntity.class));
+    String tablePrefix = processEngineConfiguration.getDatabaseTablePrefix();
+    assertEquals(tablePrefix + "ACT_RU_TASK", managementService.getTableName(Task.class));
+    assertEquals(tablePrefix + "ACT_RU_TASK", managementService.getTableName(TaskEntity.class));
     assertEquals(5, taskService.createNativeTaskQuery().sql("SELECT * FROM " + managementService.getTableName(Task.class)).listPage(0, 5).size());
     assertEquals(2, taskService.createNativeTaskQuery().sql("SELECT * FROM " + managementService.getTableName(Task.class)).listPage(10, 12).size());
   }

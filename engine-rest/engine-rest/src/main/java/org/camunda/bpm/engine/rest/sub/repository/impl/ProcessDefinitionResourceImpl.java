@@ -30,7 +30,6 @@ import org.camunda.bpm.engine.ManagementService;
 import org.camunda.bpm.engine.ProcessEngine;
 import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.RepositoryService;
-import org.camunda.bpm.engine.RuntimeService;
 import org.camunda.bpm.engine.form.StartFormData;
 import org.camunda.bpm.engine.impl.util.IoUtil;
 import org.camunda.bpm.engine.management.ActivityStatistics;
@@ -57,6 +56,8 @@ import org.camunda.bpm.engine.runtime.ProcessInstantiationBuilder;
 import org.camunda.bpm.engine.variable.VariableMap;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.camunda.bpm.engine.rest.dto.runtime.ProcessInstanceWithVariablesDto;
+import org.camunda.bpm.engine.runtime.ProcessInstanceWithVariables;
 
 public class ProcessDefinitionResourceImpl implements ProcessDefinitionResource {
 
@@ -89,16 +90,27 @@ public class ProcessDefinitionResourceImpl implements ProcessDefinitionResource 
   }
 
   @Override
-  public ProcessInstanceDto startProcessInstance(UriInfo context, StartProcessInstanceDto parameters) {
-    ProcessInstance instance = null;
-    try {
-      if (parameters.getStartInstructions() == null || parameters.getStartInstructions().isEmpty()) {
-        instance = startProcessInstance(parameters);
-      }
-      else {
-        instance = startProcessInstanceAtActivities(parameters);
-      }
+  public Response deleteProcessDefinition(String processDefinitionId, boolean cascade, boolean skipCustomListeners) {
+    RepositoryService repositoryService = engine.getRepositoryService();
+    ProcessDefinition processDefinition = repositoryService.createProcessDefinitionQuery()
+                                                           .processDefinitionId(processDefinitionId)
+                                                           .singleResult();
 
+    if (processDefinition == null) {
+      return Response.status(Status.NOT_FOUND)
+                      .entity("Process definition with id '" + processDefinitionId + "' do not exist")
+                      .build();
+    }
+
+    repositoryService.deleteProcessDefinition(processDefinitionId, cascade, skipCustomListeners);
+    return Response.ok().build();
+  }
+
+  @Override
+  public ProcessInstanceDto startProcessInstance(UriInfo context, StartProcessInstanceDto parameters) {
+    ProcessInstanceWithVariables instance = null;
+    try {
+      instance = startProcessInstanceAtActivities(parameters);
     } catch (AuthorizationException e) {
       throw e;
 
@@ -112,7 +124,13 @@ public class ProcessDefinitionResourceImpl implements ProcessDefinitionResource 
 
     }
 
-    ProcessInstanceDto result = ProcessInstanceDto.fromProcessInstance(instance);
+    ProcessInstanceDto result;
+    if (parameters.isWithVariablesInReturn()) {
+      result = ProcessInstanceWithVariablesDto.fromProcessInstance(instance);
+    }
+    else {
+     result = ProcessInstanceDto.fromProcessInstance(instance);
+    }
 
     URI uri = context.getBaseUriBuilder()
       .path(rootResourcePath)
@@ -125,16 +143,7 @@ public class ProcessDefinitionResourceImpl implements ProcessDefinitionResource 
     return result;
   }
 
-  protected ProcessInstance startProcessInstance(StartProcessInstanceDto dto) {
-    Map<String, Object> variables = VariableValueDto.toMap(dto.getVariables(), engine, objectMapper);
-    String businessKey = dto.getBusinessKey();
-    String caseInstanceId = dto.getCaseInstanceId();
-
-    return engine.getRuntimeService()
-        .startProcessInstanceById(processDefinitionId, businessKey, caseInstanceId, variables);
-  }
-
-  protected ProcessInstance startProcessInstanceAtActivities(StartProcessInstanceDto dto) {
+  protected ProcessInstanceWithVariables startProcessInstanceAtActivities(StartProcessInstanceDto dto) {
     Map<String, Object> processInstanceVariables = VariableValueDto.toMap(dto.getVariables(), engine, objectMapper);
     String businessKey = dto.getBusinessKey();
     String caseInstanceId = dto.getCaseInstanceId();
@@ -145,11 +154,13 @@ public class ProcessDefinitionResourceImpl implements ProcessDefinitionResource 
         .caseInstanceId(caseInstanceId)
         .setVariables(processInstanceVariables);
 
-    for (ProcessInstanceModificationInstructionDto instruction : dto.getStartInstructions()) {
-      instruction.applyTo(instantiationBuilder, engine, objectMapper);
+    if (dto.getStartInstructions() != null && !dto.getStartInstructions().isEmpty()) {
+      for (ProcessInstanceModificationInstructionDto instruction : dto.getStartInstructions()) {
+        instruction.applyTo(instantiationBuilder, engine, objectMapper);
+      }
     }
 
-    return instantiationBuilder.execute(dto.isSkipCustomListeners(), dto.isSkipIoMappings());
+    return instantiationBuilder.executeWithVariablesInReturn(dto.isSkipCustomListeners(), dto.isSkipIoMappings());
   }
 
   @Override

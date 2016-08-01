@@ -64,7 +64,7 @@ public abstract class AbstractInstanceCancellationCmd extends AbstractProcessIns
 
   protected void handleChildRemovalInScope(ExecutionEntity removedExecution) {
     // TODO: the following should be closer to PvmAtomicOperationDeleteCascadeFireActivityEnd
-    // once CAM-3604 is fixed (note though that e.g. boundary events expect concurrent executions to be preserved)
+    // (note though that e.g. boundary events expect concurrent executions to be preserved)
     //
     // Idea: attempting to prune and synchronize on the parent is the default behavior when
     // a concurrent child is removed, but scope activities implementing ModificationObserverBehavior
@@ -77,22 +77,16 @@ public abstract class AbstractInstanceCancellationCmd extends AbstractProcessIns
     ScopeImpl flowScope = activity.getFlowScope();
 
     PvmExecutionImpl scopeExecution = removedExecution.getParentScopeExecution(false);
-    PvmExecutionImpl scopeExecutionChild = removedExecution;
-    PvmExecutionImpl parent = scopeExecutionChild.getParent();
-    if (parent.isConcurrent()) {
-      parent.remove();
-      scopeExecutionChild = parent;
-    }
+    PvmExecutionImpl executionInParentScope = removedExecution.isConcurrent() ? removedExecution : removedExecution.getParent();
 
-    if (scopeExecutionChild.isConcurrent()) {
-      if (flowScope.getActivityBehavior() != null
-          && flowScope.getActivityBehavior() instanceof ModificationObserverBehavior) {
-        // let child removal be handled by the scope itself
-        ModificationObserverBehavior behavior = (ModificationObserverBehavior) flowScope.getActivityBehavior();
-        behavior.concurrentExecutionDeleted(scopeExecution, scopeExecutionChild);
-      }
-      else {
-        // default: pruning
+    if (flowScope.getActivityBehavior() != null && flowScope.getActivityBehavior() instanceof ModificationObserverBehavior) {
+      // let child removal be handled by the scope itself
+      ModificationObserverBehavior behavior = (ModificationObserverBehavior) flowScope.getActivityBehavior();
+      behavior.destroyInnerInstance(executionInParentScope);
+    }
+    else {
+      if (executionInParentScope.isConcurrent()) {
+        executionInParentScope.remove();
         scopeExecution.tryPruneLastConcurrentChild();
         scopeExecution.forceUpdate();
       }

@@ -18,7 +18,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.form.FormField;
 import org.camunda.bpm.engine.form.FormFieldValidationConstraint;
 import org.camunda.bpm.engine.form.TaskFormData;
@@ -213,6 +212,24 @@ public class FormDataTest extends PluggableProcessEngineTestCase {
       assertEquals(exception.getDetail(), "EXPIRED");
     }
 
+  }
+
+  @Deployment
+  public void testMissingFormVariables()
+  {
+    // given process definition with defined form varaibles
+    // when start process instance with no variables
+    ProcessInstance processInstance = runtimeService.startProcessInstanceByKey("date-form-property-test");
+    Task task = taskService.createTaskQuery().processInstanceId(processInstance.getId()).singleResult();
+
+    // then taskFormData contains form variables with null as values
+    TaskFormData taskFormData = formService.getTaskFormData(task.getId());
+    assertNotNull(taskFormData);
+    assertEquals(5, taskFormData.getFormFields().size());
+    for (FormField field : taskFormData.getFormFields()) {
+      assertNotNull(field);
+      assertNull(field.getValue().getValue());
+    }
   }
 
 }

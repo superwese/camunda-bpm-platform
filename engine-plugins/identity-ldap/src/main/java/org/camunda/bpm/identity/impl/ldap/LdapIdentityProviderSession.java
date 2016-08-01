@@ -24,21 +24,6 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import org.camunda.bpm.engine.authorization.Permission;
-import org.camunda.bpm.engine.authorization.Resource;
-import org.camunda.bpm.engine.identity.Group;
-import org.camunda.bpm.engine.identity.GroupQuery;
-import org.camunda.bpm.engine.identity.User;
-import org.camunda.bpm.engine.identity.UserQuery;
-import org.camunda.bpm.engine.impl.AbstractQuery;
-import org.camunda.bpm.engine.impl.UserQueryImpl;
-import org.camunda.bpm.engine.impl.UserQueryProperty;
-import org.camunda.bpm.engine.impl.identity.IdentityProviderException;
-import org.camunda.bpm.engine.impl.identity.ReadOnlyIdentityProvider;
-import org.camunda.bpm.engine.impl.interceptor.CommandContext;
-import org.camunda.bpm.engine.impl.persistence.entity.GroupEntity;
-import org.camunda.bpm.engine.impl.persistence.entity.UserEntity;
-
 import javax.naming.AuthenticationException;
 import javax.naming.Context;
 import javax.naming.NamingEnumeration;
@@ -50,6 +35,24 @@ import javax.naming.ldap.Control;
 import javax.naming.ldap.InitialLdapContext;
 import javax.naming.ldap.LdapContext;
 import javax.naming.ldap.SortControl;
+
+import org.camunda.bpm.engine.authorization.Permission;
+import org.camunda.bpm.engine.authorization.Resource;
+import org.camunda.bpm.engine.identity.Group;
+import org.camunda.bpm.engine.identity.GroupQuery;
+import org.camunda.bpm.engine.identity.Tenant;
+import org.camunda.bpm.engine.identity.TenantQuery;
+import org.camunda.bpm.engine.identity.User;
+import org.camunda.bpm.engine.identity.UserQuery;
+import org.camunda.bpm.engine.impl.AbstractQuery;
+import org.camunda.bpm.engine.impl.QueryOrderingProperty;
+import org.camunda.bpm.engine.impl.UserQueryImpl;
+import org.camunda.bpm.engine.impl.UserQueryProperty;
+import org.camunda.bpm.engine.impl.identity.IdentityProviderException;
+import org.camunda.bpm.engine.impl.identity.ReadOnlyIdentityProvider;
+import org.camunda.bpm.engine.impl.interceptor.CommandContext;
+import org.camunda.bpm.engine.impl.persistence.entity.GroupEntity;
+import org.camunda.bpm.engine.impl.persistence.entity.UserEntity;
 
 /**
  * <p>LDAP {@link ReadOnlyIdentityProvider}.</p>
@@ -516,20 +519,22 @@ public class LdapIdentityProviderSession implements ReadOnlyIdentityProvider {
     try {
       List<Control> controls = new ArrayList<Control>();
 
-      String orderBy = query.getOrderBy();
+      List<QueryOrderingProperty> orderBy = query.getOrderingProperties();
       if(orderBy != null) {
-        orderBy = orderBy.substring(0, orderBy.length()-4);
-        if(UserQueryProperty.USER_ID.getName().equals(orderBy)) {
-          controls.add(new SortControl(ldapConfiguration.getUserIdAttribute(), Control.CRITICAL));
+        for (QueryOrderingProperty orderingProperty : orderBy) {
+          String propertyName = orderingProperty.getQueryProperty().getName();
+          if(UserQueryProperty.USER_ID.getName().equals(propertyName)) {
+            controls.add(new SortControl(ldapConfiguration.getUserIdAttribute(), Control.CRITICAL));
 
-        } else if(UserQueryProperty.EMAIL.getName().equals(orderBy)) {
-          controls.add(new SortControl(ldapConfiguration.getUserEmailAttribute(), Control.CRITICAL));
+          } else if(UserQueryProperty.EMAIL.getName().equals(propertyName)) {
+            controls.add(new SortControl(ldapConfiguration.getUserEmailAttribute(), Control.CRITICAL));
 
-        } else if(UserQueryProperty.FIRST_NAME.getName().equals(orderBy)) {
-          controls.add(new SortControl(ldapConfiguration.getUserFirstnameAttribute(), Control.CRITICAL));
+          } else if(UserQueryProperty.FIRST_NAME.getName().equals(propertyName)) {
+            controls.add(new SortControl(ldapConfiguration.getUserFirstnameAttribute(), Control.CRITICAL));
 
-        } else if(UserQueryProperty.LAST_NAME.getName().equals(orderBy)) {
-          controls.add(new SortControl(ldapConfiguration.getUserLastnameAttribute(), Control.CRITICAL));
+          } else if(UserQueryProperty.LAST_NAME.getName().equals(propertyName)) {
+            controls.add(new SortControl(ldapConfiguration.getUserLastnameAttribute(), Control.CRITICAL));
+          }
         }
       }
 
@@ -605,5 +610,21 @@ public class LdapIdentityProviderSession implements ReadOnlyIdentityProvider {
         }
     }
     return sb.toString();
+  }
+
+  @Override
+  public TenantQuery createTenantQuery() {
+    return new LdapTenantQuery(org.camunda.bpm.engine.impl.context.Context.getProcessEngineConfiguration().getCommandExecutorTxRequired());
+  }
+
+  @Override
+  public TenantQuery createTenantQuery(CommandContext commandContext) {
+    return new LdapTenantQuery();
+  }
+
+  @Override
+  public Tenant findTenantById(String id) {
+    // since multi-tenancy is not supported for the LDAP plugin, always return null
+    return null;
   }
 }

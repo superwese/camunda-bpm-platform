@@ -16,14 +16,13 @@ import static org.camunda.bpm.engine.authorization.Authorization.AUTH_TYPE_GRANT
 import static org.camunda.bpm.engine.authorization.Permissions.ALL;
 import static org.camunda.bpm.engine.authorization.Permissions.DELETE;
 import static org.camunda.bpm.engine.authorization.Permissions.READ;
-import static org.camunda.bpm.engine.authorization.Permissions.UPDATE;
 import static org.camunda.bpm.engine.authorization.Resources.DEPLOYMENT;
 import static org.camunda.bpm.engine.authorization.Resources.FILTER;
 import static org.camunda.bpm.engine.authorization.Resources.GROUP;
 import static org.camunda.bpm.engine.authorization.Resources.TASK;
+import static org.camunda.bpm.engine.authorization.Resources.TENANT;
 import static org.camunda.bpm.engine.authorization.Resources.USER;
-import static org.camunda.bpm.engine.impl.util.EnsureUtil.*;
-
+import static org.camunda.bpm.engine.impl.util.EnsureUtil.ensureValidIndividualResourceId;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +32,7 @@ import org.camunda.bpm.engine.authorization.Permission;
 import org.camunda.bpm.engine.authorization.Resource;
 import org.camunda.bpm.engine.filter.Filter;
 import org.camunda.bpm.engine.identity.Group;
+import org.camunda.bpm.engine.identity.Tenant;
 import org.camunda.bpm.engine.identity.User;
 import org.camunda.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl;
 import org.camunda.bpm.engine.impl.context.Context;
@@ -41,6 +41,7 @@ import org.camunda.bpm.engine.impl.interceptor.CommandContext;
 import org.camunda.bpm.engine.impl.persistence.entity.AuthorizationEntity;
 import org.camunda.bpm.engine.impl.persistence.entity.AuthorizationManager;
 import org.camunda.bpm.engine.repository.DecisionDefinition;
+import org.camunda.bpm.engine.repository.DecisionRequirementsDefinition;
 import org.camunda.bpm.engine.repository.Deployment;
 import org.camunda.bpm.engine.repository.ProcessDefinition;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
@@ -81,11 +82,30 @@ public class DefaultAuthorizationProvider implements ResourceAuthorizationProvid
     return authorizations.toArray(new AuthorizationEntity[0]);
   }
 
+  public AuthorizationEntity[] newTenant(Tenant tenant) {
+    // no default authorizations on tenants.
+    return null;
+  }
+
   public AuthorizationEntity[] groupMembershipCreated(String groupId, String userId) {
 
     // no default authorizations on memberships.
 
     return null;
+  }
+
+  public AuthorizationEntity[] tenantMembershipCreated(Tenant tenant, User user) {
+
+    AuthorizationEntity userAuthorization = createGrantAuthorization(user.getId(), null, TENANT, tenant.getId(), READ);
+
+    return new AuthorizationEntity[]{ userAuthorization };
+  }
+
+  public AuthorizationEntity[] tenantMembershipCreated(Tenant tenant, Group group) {
+
+    AuthorizationEntity userAuthorization = createGrantAuthorization(null, group.getId(), TENANT, tenant.getId(), READ);
+
+    return new AuthorizationEntity[]{ userAuthorization };
   }
 
   public AuthorizationEntity[] newFilter(Filter filter) {
@@ -160,9 +180,10 @@ public class DefaultAuthorizationProvider implements ResourceAuthorizationProvid
       AuthorizationEntity authorization = getGrantAuthorizationByUserId(newAssignee, TASK, taskId);
 
       // update authorization:
-      // (1) fetched authorization == null -> create a new authorization (with READ/UPDATE permission)
-      // (2) fetched authorization != null -> add READ and UPDATE permission
-      authorization = updateAuthorization(authorization, newAssignee, null, TASK, taskId, READ, UPDATE);
+      // (1) fetched authorization == null -> create a new authorization (with READ and (UPDATE/TASK_WORK) permission)
+      // (2) fetched authorization != null -> add READ and (UPDATE/TASK_WORK) permission
+      // Update or TASK_WORK permission is configurable in camunda.cfg.xml and by default, UPDATE permission is provided
+      authorization = updateAuthorization(authorization, newAssignee, null, TASK, taskId, READ, getDefaultUserPermissionForTask());
 
       // return always created or updated authorization
       return new AuthorizationEntity[]{ authorization };
@@ -178,16 +199,16 @@ public class DefaultAuthorizationProvider implements ResourceAuthorizationProvid
           newOwner);
 
       // create (or update) an authorization for the new owner.
-
       String taskId = task.getId();
 
       // fetch existing authorization
       AuthorizationEntity authorization = getGrantAuthorizationByUserId(newOwner, TASK, taskId);
 
       // update authorization:
-      // (1) fetched authorization == null -> create a new authorization (with READ/UPDATE permission)
-      // (2) fetched authorization != null -> add READ and UPDATE permission
-      authorization = updateAuthorization(authorization, newOwner, null, TASK, taskId, READ, UPDATE);
+      // (1) fetched authorization == null -> create a new authorization (with READ and (UPDATE/TASK_WORK) permission)
+      // (2) fetched authorization != null -> add READ and (UPDATE/TASK_WORK) permission
+      // Update or TASK_WORK permission is configurable in camunda.cfg.xml and by default, UPDATE permission is provided
+      authorization = updateAuthorization(authorization, newOwner, null, TASK, taskId, READ, getDefaultUserPermissionForTask());
 
       // return always created or updated authorization
       return new AuthorizationEntity[]{ authorization };
@@ -209,9 +230,10 @@ public class DefaultAuthorizationProvider implements ResourceAuthorizationProvid
     AuthorizationEntity authorization = getGrantAuthorizationByUserId(userId, TASK, taskId);
 
     // update authorization:
-    // (1) fetched authorization == null -> create a new authorization (with READ/UPDATE permission)
-    // (2) fetched authorization != null -> add READ and UPDATE permission
-    authorization = updateAuthorization(authorization, userId, null, TASK, taskId, READ, UPDATE);
+    // (1) fetched authorization == null -> create a new authorization (with READ and (UPDATE/TASK_WORK) permission)
+    // (2) fetched authorization != null -> add READ and (UPDATE or TASK_WORK) permission
+    // Update or TASK_WORK permission is configurable in camunda.cfg.xml and by default, UPDATE permission is provided
+    authorization = updateAuthorization(authorization, userId, null, TASK, taskId, READ, getDefaultUserPermissionForTask());
 
     // return always created or updated authorization
     return new AuthorizationEntity[]{ authorization };
@@ -230,9 +252,10 @@ public class DefaultAuthorizationProvider implements ResourceAuthorizationProvid
     AuthorizationEntity authorization = getGrantAuthorizationByGroupId(groupId, TASK, taskId);
 
     // update authorization:
-    // (1) fetched authorization == null -> create a new authorization (with READ/UPDATE permission)
+    // (1) fetched authorization == null -> create a new authorization (with READ and (UPDATE/TASK_WORK) permission)
     // (2) fetched authorization != null -> add READ and UPDATE permission
-    authorization = updateAuthorization(authorization, null, groupId, TASK, taskId, READ, UPDATE);
+    // Update or TASK_WORK permission is configurable in camunda.cfg.xml and by default, UPDATE permission is provided
+    authorization = updateAuthorization(authorization, null, groupId, TASK, taskId, READ, getDefaultUserPermissionForTask());
 
     // return always created or updated authorization
     return new AuthorizationEntity[]{ authorization };
@@ -250,6 +273,11 @@ public class DefaultAuthorizationProvider implements ResourceAuthorizationProvid
 
   public AuthorizationEntity[] newDecisionDefinition(DecisionDefinition decisionDefinition) {
     // no default authorizations on decision definitions.
+    return null;
+  }
+
+  public AuthorizationEntity[] newDecisionRequirementsDefinition(DecisionRequirementsDefinition decisionRequirementsDefinition) {
+    // no default authorizations on decision requirements definitions.
     return null;
   }
 
@@ -308,4 +336,9 @@ public class DefaultAuthorizationProvider implements ResourceAuthorizationProvid
     return authorization;
   }
 
+  protected Permission getDefaultUserPermissionForTask() {
+    return Context
+      .getProcessEngineConfiguration()
+      .getDefaultUserPermissionForTask();
+  }
 }

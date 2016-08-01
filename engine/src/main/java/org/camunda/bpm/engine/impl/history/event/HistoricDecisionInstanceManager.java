@@ -27,9 +27,9 @@ import org.camunda.bpm.engine.history.HistoricDecisionInstance;
 import org.camunda.bpm.engine.history.HistoricDecisionOutputInstance;
 import org.camunda.bpm.engine.impl.HistoricDecisionInstanceQueryImpl;
 import org.camunda.bpm.engine.impl.Page;
+import org.camunda.bpm.engine.impl.db.ListQueryParameterObject;
 import org.camunda.bpm.engine.impl.persistence.AbstractHistoricManager;
 import org.camunda.bpm.engine.impl.variable.serializer.AbstractTypedValueSerializer;
-import org.camunda.bpm.engine.variable.type.ValueType;
 
 /**
  * Data base operations for {@link HistoricDecisionInstanceEntity}.
@@ -59,7 +59,7 @@ public class HistoricDecisionInstanceManager extends AbstractHistoricManager {
 
   @SuppressWarnings("unchecked")
   protected List<HistoricDecisionInstanceEntity> findHistoricDecisionInstancesByDecisionDefinitionId(String decisionDefinitionId) {
-    return getDbEntityManager().selectList("selectHistoricDecisionInstancesByDecisionDefinitionId", decisionDefinitionId);
+    return getDbEntityManager().selectList("selectHistoricDecisionInstancesByDecisionDefinitionId", configureParameterizedQuery(decisionDefinitionId));
   }
 
   protected void deleteHistoricDecisionInputInstancesByDecisionInstanceIds(Set<String> decisionInstanceIds) {
@@ -78,13 +78,25 @@ public class HistoricDecisionInstanceManager extends AbstractHistoricManager {
     }
   }
 
-  public void insertHistoricDecisionInstance(HistoricDecisionInstanceEntity historicDecisionInstance) {
+  public void insertHistoricDecisionInstances(HistoricDecisionEvaluationEvent event) {
     if (isHistoryEnabled()) {
-      getDbEntityManager().insert(historicDecisionInstance);
 
-      insertHistoricDecisionInputInstances(historicDecisionInstance.getInputs(), historicDecisionInstance.getId());
-      insertHistoricDecisionOutputInstances(historicDecisionInstance.getOutputs(), historicDecisionInstance.getId());
+      HistoricDecisionInstanceEntity rootHistoricDecisionInstance = event.getRootHistoricDecisionInstance();
+      insertHistoricDecisionInstance(rootHistoricDecisionInstance);
+
+      for (HistoricDecisionInstanceEntity requiredHistoricDecisionInstances : event.getRequiredHistoricDecisionInstances()) {
+        requiredHistoricDecisionInstances.setRootDecisionInstanceId(rootHistoricDecisionInstance.getId());
+
+        insertHistoricDecisionInstance(requiredHistoricDecisionInstances);
+      }
     }
+  }
+
+  protected void insertHistoricDecisionInstance(HistoricDecisionInstanceEntity historicDecisionInstance) {
+    getDbEntityManager().insert(historicDecisionInstance);
+
+    insertHistoricDecisionInputInstances(historicDecisionInstance.getInputs(), historicDecisionInstance.getId());
+    insertHistoricDecisionOutputInstances(historicDecisionInstance.getOutputs(), historicDecisionInstance.getId());
   }
 
   protected void insertHistoricDecisionInputInstances(List<HistoricDecisionInputInstance> inputs, String decisionInstanceId) {
@@ -107,7 +119,7 @@ public class HistoricDecisionInstanceManager extends AbstractHistoricManager {
 
  public List<HistoricDecisionInstance> findHistoricDecisionInstancesByQueryCriteria(HistoricDecisionInstanceQueryImpl query, Page page) {
     if (isHistoryEnabled()) {
-      getAuthorizationManager().configureHistoricDecisionInstanceQuery(query);
+      configureQuery(query);
 
       @SuppressWarnings("unchecked")
       List<HistoricDecisionInstance> decisionInstances = getDbEntityManager().selectList("selectHistoricDecisionInstancesByQueryCriteria", query, page);
@@ -214,7 +226,7 @@ public class HistoricDecisionInstanceManager extends AbstractHistoricManager {
 
   public long findHistoricDecisionInstanceCountByQueryCriteria(HistoricDecisionInstanceQueryImpl query) {
     if (isHistoryEnabled()) {
-      getAuthorizationManager().configureHistoricDecisionInstanceQuery(query);
+      configureQuery(query);
       return (Long) getDbEntityManager().selectOne("selectHistoricDecisionInstanceCountByQueryCriteria", query);
     } else {
       return 0;
@@ -229,4 +241,14 @@ public class HistoricDecisionInstanceManager extends AbstractHistoricManager {
   public long findHistoricDecisionInstanceCountByNativeQuery(Map<String, Object> parameterMap) {
     return (Long) getDbEntityManager().selectOne("selectHistoricDecisionInstanceCountByNativeQuery", parameterMap);
   }
+
+  protected void configureQuery(HistoricDecisionInstanceQueryImpl query) {
+    getAuthorizationManager().configureHistoricDecisionInstanceQuery(query);
+    getTenantManager().configureQuery(query);
+  }
+
+  protected ListQueryParameterObject configureParameterizedQuery(Object parameter) {
+    return getTenantManager().configureQuery(parameter);
+  }
+
 }

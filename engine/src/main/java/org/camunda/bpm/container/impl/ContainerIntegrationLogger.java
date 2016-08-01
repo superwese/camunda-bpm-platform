@@ -33,7 +33,7 @@ import org.jboss.vfs.VirtualFile;
  * @author Daniel Meyer
  *
  */
-public class ContainerIntegrationLogger extends ProcessEngineLogger {
+public class ContainerIntegrationLogger extends ProcessEngineLogger { 
 
   public ProcessEngineException couldNotInstantiateJobExecutorClass(Exception e) {
     return new ProcessEngineException(exceptionMessage(
@@ -240,7 +240,7 @@ public class ContainerIntegrationLogger extends ProcessEngineLogger {
         "Class '{}' has wrong type. Must extend {}", expectedType.getName()), e);
   }
 
-  public void timeoutDuringSutdownOfThreadPool(int i, TimeUnit seconds) {
+  public void timeoutDuringShutdownOfThreadPool(int i, TimeUnit seconds) {
     logError(
         "033",
         "Timeout during shutdown of managed thread pool. The current running tasks could not end within {} {} after shutdown operation.",

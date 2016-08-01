@@ -58,12 +58,14 @@ public class JobAcquisitionSuspensionStateTest extends PluggableProcessEngineTes
         Statement statement = null;
         ResultSet rs = null;
 
+        String tablePrefix = commandContext.getProcessEngineConfiguration().getDatabaseTablePrefix();
+
         try {
           SqlSession sqlSession = commandContext.getDbSqlSession().getSqlSession();
           connection = sqlSession.getConnection();
           statement = connection
               .createStatement();
-          String insertStatementString = "INSERT INTO ACT_RU_JOB(ID_, REV_, RETRIES_, PROCESS_INSTANCE_ID_, TYPE_, EXCLUSIVE_, HANDLER_TYPE_, HANDLER_CFG_) " +
+          String insertStatementString = "INSERT INTO " + tablePrefix + "ACT_RU_JOB(ID_, REV_, RETRIES_, PROCESS_INSTANCE_ID_, TYPE_, EXCLUSIVE_, HANDLER_TYPE_, HANDLER_CFG_) " +
               "VALUES (" +
               "'" + jobId + "'," +
               "1," +
@@ -110,12 +112,12 @@ public class JobAcquisitionSuspensionStateTest extends PluggableProcessEngineTes
         List<JobEntity> executableJobs = jobManager.findNextJobsToExecute(new Page(0, 1));
 
         assertEquals(1, executableJobs.size());
-        assertEquals(myCustomTimerEntity, executableJobs.get(0).getJobHandlerConfiguration());
+        assertEquals(myCustomTimerEntity, executableJobs.get(0).getJobHandlerConfigurationRaw());
         assertEquals(SuspensionState.ACTIVE.getStateCode(), executableJobs.get(0).getSuspensionState());
 
         executableJobs = jobManager.findExclusiveJobsToExecute(processInstanceId);
         assertEquals(1, executableJobs.size());
-        assertEquals(myCustomTimerEntity, executableJobs.get(0).getJobHandlerConfiguration());
+        assertEquals(myCustomTimerEntity, executableJobs.get(0).getJobHandlerConfigurationRaw());
         assertEquals(SuspensionState.ACTIVE.getStateCode(), executableJobs.get(0).getSuspensionState());
         return null;
       }

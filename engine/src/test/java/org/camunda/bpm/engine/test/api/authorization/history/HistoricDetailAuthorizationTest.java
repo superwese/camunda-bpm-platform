@@ -18,16 +18,19 @@ import static org.camunda.bpm.engine.authorization.Resources.PROCESS_DEFINITION;
 
 import java.util.List;
 
+import org.camunda.bpm.engine.ProcessEngineConfiguration;
 import org.camunda.bpm.engine.history.HistoricDetailQuery;
 import org.camunda.bpm.engine.history.HistoricProcessInstance;
 import org.camunda.bpm.engine.impl.AbstractQuery;
 import org.camunda.bpm.engine.task.Task;
+import org.camunda.bpm.engine.test.RequiredHistoryLevel;
 import org.camunda.bpm.engine.test.api.authorization.AuthorizationTest;
 
 /**
  * @author Roman Smirnov
  *
  */
+@RequiredHistoryLevel(ProcessEngineConfiguration.HISTORY_FULL)
 public class HistoricDetailAuthorizationTest extends AuthorizationTest {
 
   protected static final String PROCESS_KEY = "oneTaskProcess";
@@ -36,6 +39,7 @@ public class HistoricDetailAuthorizationTest extends AuthorizationTest {
 
   protected String deploymentId;
 
+  @Override
   public void setUp() throws Exception {
     deploymentId = createDeployment(null,
         "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml",
@@ -44,6 +48,7 @@ public class HistoricDetailAuthorizationTest extends AuthorizationTest {
     super.setUp();
   }
 
+  @Override
   public void tearDown() {
     super.tearDown();
     deleteDeployment(deploymentId);
@@ -86,6 +91,19 @@ public class HistoricDetailAuthorizationTest extends AuthorizationTest {
     // given
     startProcessInstanceByKey(PROCESS_KEY, getVariables());
     createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, READ_HISTORY);
+
+    // when
+    HistoricDetailQuery query = historyService.createHistoricDetailQuery().variableUpdates();
+
+    // then
+    verifyQueryResults(query, 1);
+  }
+
+  public void testSimpleVariableUpdateQueryMultiple() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY, getVariables());
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, READ_HISTORY);
+    createGrantAuthorization(PROCESS_DEFINITION, ANY, userId, READ_HISTORY);
 
     // when
     HistoricDetailQuery query = historyService.createHistoricDetailQuery().variableUpdates();

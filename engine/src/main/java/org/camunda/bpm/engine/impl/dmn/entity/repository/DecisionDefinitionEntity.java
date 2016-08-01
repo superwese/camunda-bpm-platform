@@ -14,7 +14,7 @@ package org.camunda.bpm.engine.impl.dmn.entity.repository;
 
 import java.io.Serializable;
 
-import org.camunda.bpm.dmn.engine.impl.DmnDecisionTableImpl;
+import org.camunda.bpm.dmn.engine.impl.DmnDecisionImpl;
 import org.camunda.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl;
 import org.camunda.bpm.engine.impl.context.Context;
 import org.camunda.bpm.engine.impl.db.DbEntity;
@@ -24,7 +24,7 @@ import org.camunda.bpm.engine.impl.persistence.deploy.DeploymentCache;
 import org.camunda.bpm.engine.impl.repository.ResourceDefinitionEntity;
 import org.camunda.bpm.engine.repository.DecisionDefinition;
 
-public class DecisionDefinitionEntity extends DmnDecisionTableImpl implements DecisionDefinition, ResourceDefinitionEntity, DbEntity, HasDbRevision, Serializable {
+public class DecisionDefinitionEntity extends DmnDecisionImpl implements DecisionDefinition, ResourceDefinitionEntity, DbEntity, HasDbRevision, Serializable {
 
   private static final long serialVersionUID = 1L;
 
@@ -38,6 +38,8 @@ public class DecisionDefinitionEntity extends DmnDecisionTableImpl implements De
   protected String resourceName;
   protected String diagramResourceName;
   protected String tenantId;
+  protected String decisionRequirementsDefinitionId;
+  protected String decisionRequirementsDefinitionKey;
 
   // firstVersion is true, when version == 1 or when
   // this definition does not have any previous definitions
@@ -137,6 +139,22 @@ public class DecisionDefinitionEntity extends DmnDecisionTableImpl implements De
     this.tenantId = tenantId;
   }
 
+  public String getDecisionRequirementsDefinitionId() {
+    return decisionRequirementsDefinitionId;
+  }
+
+  public void setDecisionRequirementsDefinitionId(String decisionRequirementsDefinitionId) {
+    this.decisionRequirementsDefinitionId = decisionRequirementsDefinitionId;
+  }
+
+  public String getDecisionRequirementsDefinitionKey() {
+    return decisionRequirementsDefinitionKey;
+  }
+
+  public void setDecisionRequirementsDefinitionKey(String decisionRequirementsDefinitionKey) {
+    this.decisionRequirementsDefinitionKey = decisionRequirementsDefinitionKey;
+  }
+
   public Object getPersistentState() {
     return DecisionDefinitionEntity.class;
   }
@@ -222,6 +240,8 @@ public class DecisionDefinitionEntity extends DmnDecisionTableImpl implements De
       ", category='" + category + '\'' +
       ", key='" + key + '\'' +
       ", version=" + version +
+      ", decisionRequirementsDefinitionId='" + decisionRequirementsDefinitionId + '\'' +
+      ", decisionRequirementsDefinitionKey='" + decisionRequirementsDefinitionKey + '\'' +
       ", deploymentId='" + deploymentId + '\'' +
       ", tenantId='" + tenantId + '\'' +
       '}';

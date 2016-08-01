@@ -15,15 +15,17 @@ package org.camunda.bpm.engine.impl.cmd;
 import static org.camunda.bpm.engine.impl.util.EnsureUtil.ensureNotNull;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.camunda.bpm.engine.ProcessEngineException;
+import org.camunda.bpm.engine.impl.cfg.CommandChecker;
 import org.camunda.bpm.engine.impl.interceptor.Command;
 import org.camunda.bpm.engine.impl.interceptor.CommandContext;
 import org.camunda.bpm.engine.impl.persistence.entity.ActivityInstanceImpl;
-import org.camunda.bpm.engine.impl.persistence.entity.AuthorizationManager;
 import org.camunda.bpm.engine.impl.persistence.entity.ExecutionEntity;
 import org.camunda.bpm.engine.impl.persistence.entity.TransitionInstanceImpl;
 import org.camunda.bpm.engine.impl.pvm.process.ActivityImpl;
@@ -71,11 +73,17 @@ public class GetActivityInstanceCmd implements Command<ActivityInstance> {
       return null;
     }
 
-    AuthorizationManager authorizationManager = commandContext.getAuthorizationManager();
-    authorizationManager.checkReadProcessInstance(processInstanceId);
+    checkGetActivityInstance(processInstanceId, commandContext);
 
     List<ExecutionEntity> nonEventScopeExecutions = filterNonEventScopeExecutions(executionList);
     List<ExecutionEntity> leaves = filterLeaves(nonEventScopeExecutions);
+    // Leaves must be ordered in a predictable way (e.g. by ID)
+    // in order to return a stable execution tree with every repeated invocation of this command.
+    // For legacy process instances, there may miss scope executions for activities that are now a scope.
+    // In this situation, there may be multiple scope candidates for the same instance id; which one
+    // can depend on the order the leaves are iterated.
+    orderById(leaves);
+
     ExecutionEntity processInstance = filterProcessInstance(executionList);
 
     // create act instance for process instance
@@ -165,6 +173,16 @@ public class GetActivityInstanceCmd implements Command<ActivityInstance> {
     return processActInst;
   }
 
+  protected void checkGetActivityInstance(String processInstanceId, CommandContext commandContext) {
+    for(CommandChecker checker : commandContext.getProcessEngineConfiguration().getCommandCheckers()) {
+      checker.checkReadProcessInstance(processInstanceId);
+    }
+  }
+
+  protected void orderById(List<ExecutionEntity> leaves) {
+    Collections.sort(leaves, ExecutionIdComparator.INSTANCE);
+  }
+
   protected ActivityInstanceImpl createActivityInstance(PvmExecutionImpl scopeExecution, ScopeImpl scope,
       String activityInstanceId, String parentActivityInstanceId) {
     ActivityInstanceImpl actInst = new ActivityInstanceImpl();
@@ -193,8 +211,8 @@ public class GetActivityInstanceCmd implements Command<ActivityInstance> {
     executionIds.add(scopeExecution.getId());
 
     for (PvmExecutionImpl childExecution : scopeExecution.getNonEventScopeExecutions()) {
-      // add all concurrent children that are not in an activity or inactive
-      if (childExecution.isConcurrent() && (childExecution.getActivityId() == null || !childExecution.isActive())) {
+      // add all concurrent children that are not in an activity
+      if (childExecution.isConcurrent() && (childExecution.getActivityId() == null)) {
         executionIds.add(childExecution.getId());
       }
     }
@@ -344,12 +362,13 @@ public class GetActivityInstanceCmd implements Command<ActivityInstance> {
   }
 
   protected List<ExecutionEntity> loadFromDb(final String processInstanceId, final CommandContext commandContext) {
+
     List<ExecutionEntity> executions = commandContext.getExecutionManager().findExecutionsByProcessInstanceId(processInstanceId);
     ExecutionEntity processInstance = commandContext.getExecutionManager().findExecutionById(processInstanceId);
 
     // initialize parent/child sets
     if (processInstance != null) {
-      processInstance.restoreProcessInstance(executions, null, null, null, null, null);
+      processInstance.restoreProcessInstance(executions, null, null, null, null, null, null);
     }
 
     return executions;
@@ -370,6 +389,17 @@ public class GetActivityInstanceCmd implements Command<ActivityInstance> {
         loadChildExecutionsFromCache(child, childExecutions);
       }
     }
+  }
+
+  public static class ExecutionIdComparator implements Comparator<ExecutionEntity> {
+
+    public static final ExecutionIdComparator INSTANCE = new ExecutionIdComparator();
+
+    @Override
+    public int compare(ExecutionEntity o1, ExecutionEntity o2) {
+      return o1.getId().compareTo(o2.getId());
+    }
+
   }
 
 

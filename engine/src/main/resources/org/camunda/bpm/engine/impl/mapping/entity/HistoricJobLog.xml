@@ -1,6 +1,6 @@
-<?xml version="1.0" encoding="UTF-8" ?> 
+<?xml version="1.0" encoding="UTF-8" ?>
 
-<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd"> 
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
 <mapper namespace="org.camunda.bpm.engine.impl.persistence.entity.HistoricJobLogEntity">
 
@@ -76,6 +76,10 @@
 
   <delete id="deleteHistoricJobLogByHandlerType">
     delete from ${prefix}ACT_HI_JOB_LOG where JOB_DEF_TYPE_ = #{handlerType}
+  </delete>
+
+  <delete id="deleteHistoricJobLogByJobDefinitionId">
+    delete from ${prefix}ACT_HI_JOB_LOG where JOB_DEF_ID_ = #{jobDefinitionId}
   </delete>
 
   <!-- BYTE ARRAY DELETE -->
@@ -168,12 +172,25 @@
   </select>
 
   <select id="selectHistoricJobLogCountByQueryCriteria" parameterType="org.camunda.bpm.engine.impl.HistoricJobLogQueryImpl" resultType="long">
-    select count(distinct RES.ID_)
+    select count(RES.ID_)
     <include refid="selectHistoricJobLogByQueryCriteriaSql"/>
   </select>
 
   <sql id="selectHistoricJobLogByQueryCriteriaSql">
     from ${prefix}ACT_HI_JOB_LOG RES
+
+    <if test="authCheck.isAuthorizationCheckEnabled &amp;&amp; authCheck.authUserId != null">
+      LEFT JOIN (
+        SELECT DISTINCT
+            SELF.PROCESS_DEF_KEY_ AS KEY_
+        FROM
+          ${prefix}ACT_HI_JOB_LOG SELF
+        WHERE
+            <include refid="org.camunda.bpm.engine.impl.persistence.entity.AuthorizationEntity.querySingleAuthorizationCheck" />
+      ) AUTH
+      ON AUTH.KEY_ = RES.PROCESS_DEF_KEY_
+    </if>
+
     <where>
       <if test="id != null">
         RES.ID_ = #{id}
@@ -235,20 +252,14 @@
           #{tenantId}
         </foreach>
       </if>
-      <if test="isAuthorizationCheckEnabled &amp;&amp; authUserId != null">
-        AND
-          ( CASE
 
-            WHEN
-              RES.PROCESS_DEF_KEY_ is not null
-            THEN
-              (<include refid="org.camunda.bpm.engine.impl.persistence.entity.AuthorizationEntity.authorizationCheck" />)
-
-            ELSE
-              <!-- "standalone" job (e.g. job to activate/suspend a process definition etc.) -->
-              1
-          END ) = 1
+      <if test="authCheck.isAuthorizationCheckEnabled &amp;&amp; authCheck.authUserId != null">
+        <!-- incident exists in context of a process definition -->
+        and ((RES.PROCESS_DEF_KEY_ is not null and AUTH.KEY_ is not null) or RES.PROCESS_DEF_KEY_ is null)
       </if>
+
+      <include refid="org.camunda.bpm.engine.impl.persistence.entity.TenantEntity.queryTenantCheck" />
+
     </where>
   </sql>
 

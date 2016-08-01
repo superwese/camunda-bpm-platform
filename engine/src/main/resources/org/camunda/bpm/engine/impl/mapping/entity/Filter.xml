@@ -81,16 +81,16 @@
   <select id="selectFilter" parameterType="string" resultMap="filterResultMap">
     select * from ${prefix}ACT_RU_FILTER where ID_ = #{id, jdbcType=VARCHAR}
   </select>
-
+  
   <select id="selectFilter_postgres" parameterType="string" resultMap="filterResultMap_postgres">
     select * from ${prefix}ACT_RU_FILTER where ID_ = #{id, jdbcType=VARCHAR}
   </select>
 
   <select id="selectFilterByQueryCriteria" parameterType="org.camunda.bpm.engine.impl.filter.FilterQueryImpl" resultMap="filterResultMap">
-  	<include refid="org.camunda.bpm.engine.impl.persistence.entity.Commons.bindOrderBy"/>
+    <include refid="org.camunda.bpm.engine.impl.persistence.entity.Commons.bindOrderBy"/>
     ${limitBefore}
-    select RES.* 
-    ${limitBetweenClob}
+    select ${distinct} RES.*
+    ${limitBetween}
     <include refid="selectFilterByQueryCriteriaSql" />
     ${orderBy}
     ${limitAfter}
@@ -99,20 +99,45 @@
   <select id="selectFilterByQueryCriteria_postgres" parameterType="org.camunda.bpm.engine.impl.filter.FilterQueryImpl" resultMap="filterResultMap_postgres">
     <include refid="org.camunda.bpm.engine.impl.persistence.entity.Commons.bindOrderBy"/>
     ${limitBefore}
-    select RES.* 
-    ${limitBetweenClob}
+    select ${distinct} RES.*
+    ${limitBetween}
     <include refid="selectFilterByQueryCriteriaSql" />
     ${orderBy}
     ${limitAfter}
   </select>
 
+  <select id="selectFilterByQueryCriteria_oracleDb2" parameterType="org.camunda.bpm.engine.impl.filter.FilterQueryImpl" resultMap="filterResultMap">
+    <!--
+    SEE: https://app.camunda.com/jira/browse/CAM-6014
+     -->
+    <include refid="org.camunda.bpm.engine.impl.persistence.entity.Commons.bindOrderBy"/>
+    SELECT RES.*, J.QUERY_, J.PROPERTIES_ FROM (
+      ${limitBefore}
+      select ${distinct} RES.ID_, RES.REV_, RES.RESOURCE_TYPE_, RES.NAME_, RES.OWNER_
+      ${limitBetweenFilter}
+      <include refid="selectFilterByQueryCriteriaSql" />
+      ${orderBy}
+      ${limitAfter}
+    ) RES
+    INNER JOIN ${prefix}ACT_RU_FILTER J ON RES.ID_ = J.ID_
+    <if test="orderingProperties.size() > 0">
+      ORDER BY
+      <foreach item="orderingProperty" index="index" collection="orderingProperties" separator=",">
+        ${@org.camunda.bpm.engine.impl.db.sql.MybatisJoinHelper@orderBy(orderingProperty, index)}
+      </foreach>
+    </if>
+  </select>
+
    <select id="selectFilterCountByQueryCriteria" parameterType="org.camunda.bpm.engine.impl.filter.FilterQueryImpl" resultType="long">
-    select count(RES.ID_)
+    select count(distinct RES.ID_)
     <include refid="selectFilterByQueryCriteriaSql" />
   </select>
 
   <sql id="selectFilterByQueryCriteriaSql">
     from ${prefix}ACT_RU_FILTER RES
+    
+    <include refid="org.camunda.bpm.engine.impl.persistence.entity.AuthorizationEntity.authCheckJoin" /> 
+    
     <where>
       <if test="filterId != null">
         RES.ID_ = #{filterId}

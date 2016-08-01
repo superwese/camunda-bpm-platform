@@ -13,7 +13,6 @@
 
 package org.camunda.bpm.engine.impl.persistence.entity;
 
-import static org.camunda.bpm.engine.impl.util.EnsureUtil.ensureNotNull;
 
 import java.io.Serializable;
 import java.util.Date;
@@ -29,6 +28,7 @@ import org.camunda.bpm.engine.impl.pvm.process.ActivityImpl;
 import org.camunda.bpm.engine.impl.pvm.process.ProcessDefinitionImpl;
 import org.camunda.bpm.engine.impl.util.ClockUtil;
 import org.camunda.bpm.engine.runtime.EventSubscription;
+import static org.camunda.bpm.engine.impl.util.EnsureUtil.ensureNotNull;
 
 /**
  * @author Daniel Meyer
@@ -138,6 +138,7 @@ public abstract class EventSubscriptionEntity implements EventSubscription, DbEn
     persistentState.put("executionId", executionId);
     persistentState.put("configuration", configuration);
     persistentState.put("activityId", activityId);
+    persistentState.put("eventName", eventName);
     return persistentState;
   }
 
@@ -269,6 +270,7 @@ public abstract class EventSubscriptionEntity implements EventSubscription, DbEn
 
   public void setActivityId(String activityId) {
     this.activityId = activityId;
+    this.activity = null;
   }
 
   public Date getCreated() {

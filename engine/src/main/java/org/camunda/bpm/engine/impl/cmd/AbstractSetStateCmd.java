@@ -15,8 +15,14 @@ package org.camunda.bpm.engine.impl.cmd;
 import java.util.Date;
 import java.util.concurrent.Callable;
 
+import org.camunda.bpm.engine.impl.history.HistoryLevel;
+import org.camunda.bpm.engine.impl.history.event.HistoryEvent;
+import org.camunda.bpm.engine.impl.history.event.HistoryEventProcessor;
+import org.camunda.bpm.engine.impl.history.event.HistoryEventTypes;
+import org.camunda.bpm.engine.impl.history.producer.HistoryEventProducer;
 import org.camunda.bpm.engine.impl.interceptor.Command;
 import org.camunda.bpm.engine.impl.interceptor.CommandContext;
+import org.camunda.bpm.engine.impl.jobexecutor.JobHandlerConfiguration;
 import org.camunda.bpm.engine.impl.persistence.entity.SuspensionState;
 import org.camunda.bpm.engine.impl.persistence.entity.TimerEntity;
 
@@ -67,12 +73,16 @@ public abstract class AbstractSetStateCmd implements Command<Void> {
       scheduleSuspensionStateUpdate(commandContext);
     }
 
+    triggerHistoryEvent(commandContext);
+
     if (!isLogUserOperationDisabled()) {
       logUserOperation(commandContext);
     }
 
     return null;
   }
+
+  protected abstract void triggerHistoryEvent(CommandContext commandContext);
 
   public void disableLogUserOperation() {
     this.isLogUserOperationDisabled = true;
@@ -89,11 +99,11 @@ public abstract class AbstractSetStateCmd implements Command<Void> {
   protected void scheduleSuspensionStateUpdate(CommandContext commandContext) {
     TimerEntity timer = new TimerEntity();
 
-    String jobHandlerConfiguration = getJobHandlerConfiguration();
+    JobHandlerConfiguration jobHandlerConfiguration = getJobHandlerConfiguration();
 
     timer.setDuedate(executionDate);
     timer.setJobHandlerType(getDelayedExecutionJobHandlerType());
-    timer.setJobHandlerConfiguration(jobHandlerConfiguration);
+    timer.setJobHandlerConfigurationRaw(jobHandlerConfiguration.toCanonicalString());
 
     commandContext.getJobManager().schedule(timer);
   }
@@ -102,7 +112,7 @@ public abstract class AbstractSetStateCmd implements Command<Void> {
     return null;
   }
 
-  protected String getJobHandlerConfiguration() {
+  protected JobHandlerConfiguration getJobHandlerConfiguration() {
     return null;
   }
 

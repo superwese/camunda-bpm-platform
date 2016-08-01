@@ -17,9 +17,9 @@ import java.io.Serializable;
 
 import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.history.UserOperationLogEntry;
+import org.camunda.bpm.engine.impl.cfg.CommandChecker;
 import org.camunda.bpm.engine.impl.interceptor.Command;
 import org.camunda.bpm.engine.impl.interceptor.CommandContext;
-import org.camunda.bpm.engine.impl.persistence.entity.AuthorizationManager;
 import org.camunda.bpm.engine.impl.persistence.entity.JobDefinitionEntity;
 import org.camunda.bpm.engine.impl.persistence.entity.JobDefinitionManager;
 import org.camunda.bpm.engine.impl.persistence.entity.JobEntity;
@@ -69,8 +69,9 @@ public class SetJobRetriesCmd implements Command<Void>, Serializable {
         .findJobById(jobId);
     if (job != null) {
 
-      AuthorizationManager authorizationManager = commandContext.getAuthorizationManager();
-      authorizationManager.checkUpdateProcessInstance(job);
+      for(CommandChecker checker : commandContext.getProcessEngineConfiguration().getCommandCheckers()) {
+        checker.checkUpdateJob(job);
+      }
 
       if (job.isInInconsistentLockState()) {
         job.resetLock();
@@ -89,14 +90,15 @@ public class SetJobRetriesCmd implements Command<Void>, Serializable {
 
   protected void setJobRetriesByJobDefinitionId(CommandContext commandContext) {
     JobDefinitionManager jobDefinitionManager = commandContext.getJobDefinitionManager();
-    AuthorizationManager authorizationManager = commandContext.getAuthorizationManager();
     JobDefinitionEntity jobDefinition = jobDefinitionManager.findById(jobDefinitionId);
 
     if (jobDefinition != null) {
-      String processDefinitionKey = jobDefinition.getProcessDefinitionKey();
-      authorizationManager.checkUpdateProcessInstanceByProcessDefinitionKey(processDefinitionKey);
+      String processDefinitionId = jobDefinition.getProcessDefinitionId();
+      for(CommandChecker checker : commandContext.getProcessEngineConfiguration().getCommandCheckers()) {
+        checker.checkUpdateProcessInstanceByProcessDefinitionId(processDefinitionId);
+      }
     }
-
+ 
     commandContext
         .getJobManager()
         .updateFailedJobRetriesByJobDefinitionId(jobDefinitionId, retries);

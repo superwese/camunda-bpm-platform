@@ -13,10 +13,13 @@
 
 package org.camunda.bpm.engine.rest.dto.history;
 
+import static java.lang.Boolean.TRUE;
+
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+
 import javax.ws.rs.core.MultivaluedMap;
 
 import org.camunda.bpm.engine.ProcessEngine;
@@ -26,18 +29,21 @@ import org.camunda.bpm.engine.rest.dto.CamundaQueryParam;
 import org.camunda.bpm.engine.rest.dto.converter.BooleanConverter;
 import org.camunda.bpm.engine.rest.dto.converter.DateConverter;
 import org.camunda.bpm.engine.rest.dto.converter.StringArrayConverter;
+import org.camunda.bpm.engine.rest.dto.converter.StringListConverter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class HistoricDecisionInstanceQueryDto extends AbstractQueryDto<HistoricDecisionInstanceQuery> {
 
   public static final String SORT_BY_EVALUATION_TIME_VALUE = "evaluationTime";
+  public static final String SORT_BY_TENANT_ID = "tenantId";
 
   public static final List<String> VALID_SORT_BY_VALUES;
 
   static {
     VALID_SORT_BY_VALUES = new ArrayList<String>();
     VALID_SORT_BY_VALUES.add(SORT_BY_EVALUATION_TIME_VALUE);
+    VALID_SORT_BY_VALUES.add(SORT_BY_TENANT_ID);
   }
 
   protected String decisionInstanceId;
@@ -55,10 +61,16 @@ public class HistoricDecisionInstanceQueryDto extends AbstractQueryDto<HistoricD
   protected String[] activityInstanceIdIn;
   protected Date evaluatedBefore;
   protected Date evaluatedAfter;
+  protected String userId;
   protected Boolean includeInputs;
   protected Boolean includeOutputs;
   protected Boolean disableBinaryFetching;
   protected Boolean disableCustomObjectDeserialization;
+  protected String rootDecisionInstanceId;
+  protected Boolean rootDecisionInstancesOnly;
+  protected String decisionRequirementsDefinitionId;
+  protected String decisionRequirementsDefinitionKey;
+  protected List<String> tenantIds;
 
   public HistoricDecisionInstanceQueryDto() {
   }
@@ -142,6 +154,11 @@ public class HistoricDecisionInstanceQueryDto extends AbstractQueryDto<HistoricD
     this.evaluatedAfter = evaluatedAfter;
   }
 
+  @CamundaQueryParam(value = "userId")
+  public void setUserId(String userId) {
+    this.userId = userId;
+  }
+
   @CamundaQueryParam(value = "includeInputs", converter = BooleanConverter.class)
   public void setIncludeInputs(Boolean includeInputs) {
     this.includeInputs = includeInputs;
@@ -162,14 +179,42 @@ public class HistoricDecisionInstanceQueryDto extends AbstractQueryDto<HistoricD
     this.disableCustomObjectDeserialization = disableCustomObjectDeserialization;
   }
 
+  @CamundaQueryParam(value = "rootDecisionInstanceId")
+  public void setRootDecisionInstanceId(String rootDecisionInstanceId) {
+    this.rootDecisionInstanceId = rootDecisionInstanceId;
+  }
+
+  @CamundaQueryParam(value = "rootDecisionInstancesOnly", converter = BooleanConverter.class)
+  public void setRootDecisionInstancesOnly(Boolean rootDecisionInstancesOnly) {
+    this.rootDecisionInstancesOnly = rootDecisionInstancesOnly;
+  }
+
+  @CamundaQueryParam(value = "decisionRequirementsDefinitionId")
+  public void setDecisionRequirementsDefinitionId(String decisionRequirementsDefinitionId) {
+    this.decisionRequirementsDefinitionId = decisionRequirementsDefinitionId;
+  }
+
+  @CamundaQueryParam(value = "decisionRequirementsDefinitionKey")
+  public void setDecisionRequirementsDefinitionKey(String decisionRequirementsDefinitionKey) {
+    this.decisionRequirementsDefinitionKey = decisionRequirementsDefinitionKey;
+  }
+
+  @CamundaQueryParam(value = "tenantIdIn", converter = StringListConverter.class)
+  public void setTenantIdIn(List<String> tenantIds) {
+    this.tenantIds = tenantIds;
+  }
+
+  @Override
   protected boolean isValidSortByValue(String value) {
     return VALID_SORT_BY_VALUES.contains(value);
   }
 
+  @Override
   protected HistoricDecisionInstanceQuery createNewQuery(ProcessEngine engine) {
     return engine.getHistoryService().createHistoricDecisionInstanceQuery();
   }
 
+  @Override
   protected void applyFilters(HistoricDecisionInstanceQuery query) {
     if (decisionInstanceId != null) {
       query.decisionInstanceId(decisionInstanceId);
@@ -216,23 +261,44 @@ public class HistoricDecisionInstanceQueryDto extends AbstractQueryDto<HistoricD
     if (evaluatedAfter != null) {
       query.evaluatedAfter(evaluatedAfter);
     }
-    if (includeInputs != null && includeInputs) {
+    if (userId != null) {
+      query.userId(userId);
+    }
+    if (TRUE.equals(includeInputs)) {
       query.includeInputs();
     }
-    if (includeOutputs != null && includeOutputs) {
+    if (TRUE.equals(includeOutputs)) {
       query.includeOutputs();
     }
-    if (disableBinaryFetching != null && disableBinaryFetching) {
+    if (TRUE.equals(disableBinaryFetching)) {
       query.disableBinaryFetching();
     }
-    if (disableCustomObjectDeserialization != null && disableCustomObjectDeserialization) {
+    if (TRUE.equals(disableCustomObjectDeserialization)) {
       query.disableCustomObjectDeserialization();
+    }
+    if (rootDecisionInstanceId != null) {
+      query.rootDecisionInstanceId(rootDecisionInstanceId);
+    }
+    if (TRUE.equals(rootDecisionInstancesOnly)) {
+      query.rootDecisionInstancesOnly();
+    }
+    if (decisionRequirementsDefinitionId != null) {
+      query.decisionRequirementsDefinitionId(decisionRequirementsDefinitionId);
+    }
+    if (decisionRequirementsDefinitionKey != null) {
+      query.decisionRequirementsDefinitionKey(decisionRequirementsDefinitionKey);
+    }
+    if (tenantIds != null && !tenantIds.isEmpty()) {
+      query.tenantIdIn(tenantIds.toArray(new String[tenantIds.size()]));
     }
   }
 
+  @Override
   protected void applySortBy(HistoricDecisionInstanceQuery query, String sortBy, Map<String, Object> parameters, ProcessEngine engine) {
     if (sortBy.equals(SORT_BY_EVALUATION_TIME_VALUE)) {
       query.orderByEvaluationTime();
+    } else if (sortBy.equals(SORT_BY_TENANT_ID)) {
+      query.orderByTenantId();
     }
   }
 

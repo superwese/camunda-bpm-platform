@@ -19,13 +19,20 @@ import javax.ws.rs.core.Response.Status;
 
 import org.camunda.bpm.engine.BadUserRequestException;
 import org.camunda.bpm.engine.RuntimeService;
-import org.camunda.bpm.engine.migration.MigratingProcessInstanceValidationException;
+import org.camunda.bpm.engine.batch.Batch;
+import org.camunda.bpm.engine.migration.MigrationInstructionsBuilder;
 import org.camunda.bpm.engine.migration.MigrationPlan;
+import org.camunda.bpm.engine.migration.MigrationPlanExecutionBuilder;
 import org.camunda.bpm.engine.migration.MigrationPlanValidationException;
 import org.camunda.bpm.engine.rest.MigrationRestService;
+import org.camunda.bpm.engine.rest.dto.batch.BatchDto;
 import org.camunda.bpm.engine.rest.dto.migration.MigrationExecutionDto;
 import org.camunda.bpm.engine.rest.dto.migration.MigrationPlanDto;
+import org.camunda.bpm.engine.rest.dto.migration.MigrationPlanGenerationDto;
+import org.camunda.bpm.engine.rest.dto.migration.MigrationPlanReportDto;
+import org.camunda.bpm.engine.rest.dto.runtime.ProcessInstanceQueryDto;
 import org.camunda.bpm.engine.rest.exception.InvalidRequestException;
+import org.camunda.bpm.engine.runtime.ProcessInstanceQuery;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -35,16 +42,21 @@ public class MigrationRestServiceImpl extends AbstractRestProcessEngineAware imp
     super(engineName, objectMapper);
   }
 
-  public MigrationPlanDto generateMigrationPlan(MigrationPlanDto initialMigrationPlan) {
+  public MigrationPlanDto generateMigrationPlan(MigrationPlanGenerationDto generationDto) {
     RuntimeService runtimeService = processEngine.getRuntimeService();
 
-    String sourceProcessDefinitionId = initialMigrationPlan.getSourceProcessDefinitionId();
-    String targetProcessDefinitionId = initialMigrationPlan.getTargetProcessDefinitionId();
+    String sourceProcessDefinitionId = generationDto.getSourceProcessDefinitionId();
+    String targetProcessDefinitionId = generationDto.getTargetProcessDefinitionId();
 
     try {
-      MigrationPlan migrationPlan = runtimeService.createMigrationPlan(sourceProcessDefinitionId, targetProcessDefinitionId)
-        .mapEqualActivities()
-        .build();
+      MigrationInstructionsBuilder instructionsBuilder = runtimeService.createMigrationPlan(sourceProcessDefinitionId, targetProcessDefinitionId)
+        .mapEqualActivities();
+
+      if (generationDto.isUpdateEventTriggers()) {
+        instructionsBuilder = instructionsBuilder.updateEventTriggers();
+      }
+
+      MigrationPlan migrationPlan = instructionsBuilder.build();
 
       return MigrationPlanDto.from(migrationPlan);
     }
@@ -53,19 +65,55 @@ public class MigrationRestServiceImpl extends AbstractRestProcessEngineAware imp
     }
   }
 
-  public void executeMigrationPlan(MigrationExecutionDto migrationExecution) {
-    MigrationPlanDto migrationPlanDto = migrationExecution.getMigrationPlan();
-    List<String> processInstanceIds = migrationExecution.getProcessInstanceIds();
-
+  public MigrationPlanReportDto validateMigrationPlan(MigrationPlanDto migrationPlanDto) {
     try {
-      MigrationPlan migrationPlan = MigrationPlanDto.toMigrationPlan(processEngine, migrationPlanDto);
-      processEngine.getRuntimeService()
-        .executeMigrationPlan(migrationPlan, processInstanceIds);
+      createMigrationPlan(migrationPlanDto);
+      // return an empty report if not errors are found
+      return MigrationPlanReportDto.emptyReport();
     }
     catch (MigrationPlanValidationException e) {
-      throw e;
+     return MigrationPlanReportDto.form(e.getValidationReport());
     }
-    catch (MigratingProcessInstanceValidationException e) {
+  }
+
+  public void executeMigrationPlan(MigrationExecutionDto migrationExecution) {
+    createMigrationPlanExecutionBuilder(migrationExecution).execute();
+  }
+
+  public BatchDto executeMigrationPlanAsync(MigrationExecutionDto migrationExecution) {
+    Batch batch = createMigrationPlanExecutionBuilder(migrationExecution).executeAsync();
+    return BatchDto.fromBatch(batch);
+  }
+
+  protected MigrationPlanExecutionBuilder createMigrationPlanExecutionBuilder(MigrationExecutionDto migrationExecution) {
+    MigrationPlan migrationPlan = createMigrationPlan(migrationExecution.getMigrationPlan());
+    List<String> processInstanceIds = migrationExecution.getProcessInstanceIds();
+
+    MigrationPlanExecutionBuilder executionBuilder = processEngine.getRuntimeService()
+      .newMigration(migrationPlan).processInstanceIds(processInstanceIds);
+
+    ProcessInstanceQueryDto processInstanceQueryDto = migrationExecution.getProcessInstanceQuery();
+    if (processInstanceQueryDto != null) {
+      ProcessInstanceQuery processInstanceQuery = processInstanceQueryDto.toQuery(getProcessEngine());
+      executionBuilder.processInstanceQuery(processInstanceQuery);
+    }
+
+    if (migrationExecution.isSkipCustomListeners()) {
+      executionBuilder.skipCustomListeners();
+    }
+
+    if (migrationExecution.isSkipIoMappings()) {
+      executionBuilder.skipIoMappings();
+    }
+
+    return executionBuilder;
+  }
+
+  protected MigrationPlan createMigrationPlan(MigrationPlanDto migrationPlanDto) {
+    try {
+      return MigrationPlanDto.toMigrationPlan(processEngine, migrationPlanDto);
+    }
+    catch (MigrationPlanValidationException e) {
       throw e;
     }
     catch (BadUserRequestException e) {

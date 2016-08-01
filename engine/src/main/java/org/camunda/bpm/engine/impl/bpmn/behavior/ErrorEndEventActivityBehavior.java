@@ -28,7 +28,7 @@ public class ErrorEndEventActivityBehavior extends AbstractBpmnActivityBehavior 
   }
 
   public void execute(ActivityExecution execution) throws Exception {
-    propagateError(errorCode, null, execution);
+    propagateError(errorCode, null, null, execution);
   }
 
   public String getErrorCode() {

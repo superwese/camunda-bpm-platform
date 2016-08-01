@@ -1,16 +1,10 @@
 package org.camunda.bpm.engine.rest;
 
-import static com.jayway.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
-import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.argThat;
-import static org.mockito.Matchers.eq;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import java.util.Date;
 import java.util.HashMap;
@@ -23,6 +17,7 @@ import org.camunda.bpm.engine.AuthorizationException;
 import org.camunda.bpm.engine.MismatchingMessageCorrelationException;
 import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.RuntimeService;
+import org.camunda.bpm.engine.exception.NullValueException;
 import org.camunda.bpm.engine.rest.exception.InvalidRequestException;
 import org.camunda.bpm.engine.rest.exception.RestException;
 import org.camunda.bpm.engine.rest.helper.EqualsMap;
@@ -35,18 +30,43 @@ import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
 import org.mockito.Matchers;
+import org.mockito.Mockito;
 
 import com.jayway.restassured.http.ContentType;
+import com.jayway.restassured.response.Response;
+import java.util.ArrayList;
+import java.util.List;
+import junit.framework.Assert;
+import static org.camunda.bpm.engine.rest.AbstractRestServiceTest.POST_JSON_CONTENT_TYPE;
+import org.camunda.bpm.engine.runtime.MessageCorrelationResult;
+import org.camunda.bpm.engine.runtime.MessageCorrelationResultType;
+import static org.mockito.Mockito.when;
+import static com.jayway.restassured.RestAssured.given;
+import static com.jayway.restassured.path.json.JsonPath.from;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 public class MessageRestServiceTest extends AbstractRestServiceTest {
 
   @ClassRule
   public static TestContainerRule rule = new TestContainerRule();
 
-  protected static final String MESSAGE_URL = TEST_RESOURCE_ROOT_PATH + "/message";
+  protected static final String MESSAGE_URL = TEST_RESOURCE_ROOT_PATH +  MessageRestService.PATH;
 
   private RuntimeService runtimeServiceMock;
   private MessageCorrelationBuilder messageCorrelationBuilderMock;
+  private MessageCorrelationResult executionResult;
+  private MessageCorrelationResult procInstanceResult;
+  private List<MessageCorrelationResult> executionResultList;
+  private List<MessageCorrelationResult> procInstanceResultList;
+  private List<MessageCorrelationResult> mixedResultList;
 
   @Before
   public void setupMocks() {
@@ -61,6 +81,14 @@ public class MessageRestServiceTest extends AbstractRestServiceTest {
     when(messageCorrelationBuilderMock.processInstanceVariableEquals(anyString(), any())).thenReturn(messageCorrelationBuilderMock);
     when(messageCorrelationBuilderMock.setVariables(Matchers.<Map<String,Object>>any())).thenReturn(messageCorrelationBuilderMock);
     when(messageCorrelationBuilderMock.setVariable(anyString(), any())).thenReturn(messageCorrelationBuilderMock);
+
+    executionResult = MockProvider.createMessageCorrelationResult(MessageCorrelationResultType.Execution);
+    procInstanceResult = MockProvider.createMessageCorrelationResult(MessageCorrelationResultType.ProcessDefinition);
+    executionResultList = MockProvider.createMessageCorrelationResultList(MessageCorrelationResultType.Execution);
+    procInstanceResultList = MockProvider.createMessageCorrelationResultList(MessageCorrelationResultType.ProcessDefinition);
+    mixedResultList = new ArrayList<MessageCorrelationResult>(executionResultList);
+    mixedResultList.addAll(procInstanceResultList);
+
   }
 
   @Test
@@ -102,10 +130,87 @@ public class MessageRestServiceTest extends AbstractRestServiceTest {
       verify(messageCorrelationBuilderMock).processInstanceVariableEquals(name, value);
     }
 
-    verify(messageCorrelationBuilderMock).correlate();
+    verify(messageCorrelationBuilderMock).correlateWithResult();
 
 //    verify(runtimeServiceMock).correlateMessage(eq(messageName), eq(businessKey),
 //        argThat(new EqualsMap(expectedCorrelationKeys)), argThat(new EqualsMap(expectedVariables)));
+  }
+
+  @Test
+  public void testFullMessageCorrelationWithExecutionResult() {
+    //given
+    when(messageCorrelationBuilderMock.correlateWithResult()).thenReturn(executionResult);
+
+    String messageName = "aMessageName";
+    Map<String, Object> messageParameters = new HashMap<String, Object>();
+    messageParameters.put("messageName", messageName);
+    messageParameters.put("resultEnabled", true);
+
+    //when
+    Response response = given().contentType(POST_JSON_CONTENT_TYPE)
+           .body(messageParameters)
+    .then().expect()
+           .contentType(ContentType.JSON)
+           .statusCode(Status.OK.getStatusCode())
+    .when().post(MESSAGE_URL);
+
+    //then
+    assertNotNull(response);
+    String content = response.asString();
+    assertTrue(!content.isEmpty());
+    checkExecutionResult(content, 0);
+
+    verify(runtimeServiceMock).createMessageCorrelation(eq(messageName));
+    verify(messageCorrelationBuilderMock).correlateWithResult();
+  }
+
+  protected void checkExecutionResult(String content, int idx) {
+    //resultType should be execution
+    String resultType = from(content).get("[" + idx + "].resultType").toString();
+    assertEquals(MessageCorrelationResultType.Execution.name(), resultType);
+    //execution should be filled and process instance should be null
+    assertEquals(MockProvider.EXAMPLE_EXECUTION_ID, from(content).get("[" + idx + "].execution.id"));
+    assertEquals(MockProvider.EXAMPLE_PROCESS_INSTANCE_ID, from(content).get("[" + idx + "].execution.processInstanceId"));
+    assertNull(from(content).get("[" + idx + "].processInstance"));
+  }
+
+  @Test
+  public void testFullMessageCorrelationWithProcessDefinitionResult() {
+    //given
+    when(messageCorrelationBuilderMock.correlateWithResult()).thenReturn(procInstanceResult);
+
+    String messageName = "aMessageName";
+    Map<String, Object> messageParameters = new HashMap<String, Object>();
+    messageParameters.put("messageName", messageName);
+    messageParameters.put("resultEnabled", true);
+
+    //when
+    Response response = given().contentType(POST_JSON_CONTENT_TYPE)
+           .body(messageParameters)
+    .then().expect()
+           .contentType(ContentType.JSON)
+           .statusCode(Status.OK.getStatusCode())
+    .when().post(MESSAGE_URL);
+
+    //then
+    assertNotNull(response);
+    String content = response.asString();
+    assertTrue(!content.isEmpty());
+    checkProcessInstanceResult(content, 0);
+
+    verify(runtimeServiceMock).createMessageCorrelation(eq(messageName));
+    verify(messageCorrelationBuilderMock).correlateWithResult();
+  }
+
+  protected void checkProcessInstanceResult(String content, int idx) {
+    //resultType should be set to process definition
+    String resultType = from(content).get("[" + idx + "].resultType");
+    Assert.assertEquals(MessageCorrelationResultType.ProcessDefinition.name(), resultType);
+
+    //process instance should be filled and execution should be null
+    Assert.assertEquals(MockProvider.EXAMPLE_PROCESS_INSTANCE_ID, from(content).get("[" + idx + "].processInstance.id"));
+    Assert.assertEquals(MockProvider.EXAMPLE_PROCESS_DEFINITION_ID, from(content).get("[" + idx + "].processInstance.definitionId"));
+    Assert.assertNull(from(content).get("[" + idx + "].execution"));
   }
 
   @Test
@@ -148,8 +253,143 @@ public class MessageRestServiceTest extends AbstractRestServiceTest {
       verify(messageCorrelationBuilderMock).processInstanceVariableEquals(name, value);
     }
 
-    verify(messageCorrelationBuilderMock).correlateAll();
+    verify(messageCorrelationBuilderMock).correlateAllWithResult();
 
+  }
+
+  @Test
+  public void testFullMessageCorrelationAllWithExecutionResult() {
+    //given
+    when(messageCorrelationBuilderMock.correlateAllWithResult()).thenReturn(executionResultList);
+
+    String messageName = "aMessageName";
+    Map<String, Object> messageParameters = new HashMap<String, Object>();
+    messageParameters.put("messageName", messageName);
+    messageParameters.put("all", true);
+    messageParameters.put("resultEnabled", true);
+
+    //when
+    Response response = given().contentType(POST_JSON_CONTENT_TYPE)
+           .body(messageParameters)
+    .then().expect()
+           .contentType(ContentType.JSON)
+           .statusCode(Status.OK.getStatusCode())
+    .when().post(MESSAGE_URL);
+
+    //then
+    assertNotNull(response);
+    String content = response.asString();
+    assertTrue(!content.isEmpty());
+
+    List<HashMap> results = from(content).getList("");
+    assertEquals(2, results.size());
+    for (int i = 0; i < 2; i++) {
+      checkExecutionResult(content, i);
+    }
+
+    verify(runtimeServiceMock).createMessageCorrelation(eq(messageName));
+    verify(messageCorrelationBuilderMock).correlateAllWithResult();
+  }
+
+ @Test
+  public void testFullMessageCorrelationAllWithProcessInstanceResult() {
+    //given
+    when(messageCorrelationBuilderMock.correlateAllWithResult()).thenReturn(procInstanceResultList);
+
+    String messageName = "aMessageName";
+    Map<String, Object> messageParameters = new HashMap<String, Object>();
+    messageParameters.put("messageName", messageName);
+    messageParameters.put("all", true);
+    messageParameters.put("resultEnabled", true);
+
+    //when
+    Response response = given().contentType(POST_JSON_CONTENT_TYPE)
+           .body(messageParameters)
+    .then().expect()
+           .contentType(ContentType.JSON)
+           .statusCode(Status.OK.getStatusCode())
+    .when().post(MESSAGE_URL);
+
+    //then
+    assertNotNull(response);
+    String content = response.asString();
+    assertTrue(!content.isEmpty());
+
+    List<HashMap> results = from(content).getList("");
+    assertEquals(2, results.size());
+    for (int i = 0; i < 2; i++) {
+      checkProcessInstanceResult(content, i);
+    }
+
+    verify(runtimeServiceMock).createMessageCorrelation(eq(messageName));
+    verify(messageCorrelationBuilderMock).correlateAllWithResult();
+  }
+
+  @Test
+  public void testFullMessageCorrelationAllWithMixedResult() {
+    //given
+    when(messageCorrelationBuilderMock.correlateAllWithResult()).thenReturn(mixedResultList);
+
+    String messageName = "aMessageName";
+    Map<String, Object> messageParameters = new HashMap<String, Object>();
+    messageParameters.put("messageName", messageName);
+    messageParameters.put("all", true);
+    messageParameters.put("resultEnabled", true);
+
+    //when
+    Response response = given().contentType(POST_JSON_CONTENT_TYPE)
+           .body(messageParameters)
+    .then().expect()
+           .contentType(ContentType.JSON)
+           .statusCode(Status.OK.getStatusCode())
+    .when().post(MESSAGE_URL);
+
+    //then
+    assertNotNull(response);
+    String content = response.asString();
+    assertTrue(!content.isEmpty());
+
+    List<HashMap> results = from(content).getList("");
+    assertEquals(4, results.size());
+    for (int i = 0; i < 2; i++) {
+      String resultType = from(content).get("[" + i + "].resultType");
+      assertNotNull(resultType);
+      if (resultType.equals(MessageCorrelationResultType.Execution.name())) {
+        checkExecutionResult(content, i);
+      } else {
+        checkProcessInstanceResult(content, i);
+      }
+    }
+
+    verify(runtimeServiceMock).createMessageCorrelation(eq(messageName));
+    verify(messageCorrelationBuilderMock).correlateAllWithResult();
+  }
+
+
+  @Test
+  public void testFullMessageCorrelationAllWithNoResult() {
+    //given
+    when(messageCorrelationBuilderMock.correlateAllWithResult()).thenReturn(mixedResultList);
+
+    String messageName = "aMessageName";
+    Map<String, Object> messageParameters = new HashMap<String, Object>();
+    messageParameters.put("messageName", messageName);
+    messageParameters.put("all", true);
+
+    //when
+    Response response = given().contentType(POST_JSON_CONTENT_TYPE)
+           .body(messageParameters)
+    .then().expect()
+           .statusCode(Status.NO_CONTENT.getStatusCode())
+    .when().post(MESSAGE_URL);
+
+    //then
+    assertNotNull(response);
+    String content = response.asString();
+    assertTrue(content.isEmpty());
+
+    verify(runtimeServiceMock).createMessageCorrelation(eq(messageName));
+    verify(messageCorrelationBuilderMock).correlateAllWithResult();
   }
 
   @Test
@@ -164,12 +404,8 @@ public class MessageRestServiceTest extends AbstractRestServiceTest {
       .when().post(MESSAGE_URL);
 
     verify(runtimeServiceMock).createMessageCorrelation(eq(messageName));
-    verify(messageCorrelationBuilderMock).processInstanceBusinessKey(eq((String) null));
-    verify(messageCorrelationBuilderMock).setVariables(argThat(new EqualsMap(null)));
-    verify(messageCorrelationBuilderMock).correlate();
-
-//    verify(runtimeServiceMock).correlateMessage(eq(messageName), eq((String) null),
-//        argThat(new EqualsMap(null)), argThat(new EqualsMap(null)));
+    verify(messageCorrelationBuilderMock).correlateWithResult();
+    verifyNoMoreInteractions(messageCorrelationBuilderMock);
   }
 
   @Test
@@ -190,8 +426,8 @@ public class MessageRestServiceTest extends AbstractRestServiceTest {
 
     verify(runtimeServiceMock).createMessageCorrelation(eq(messageName));
     verify(messageCorrelationBuilderMock).processInstanceBusinessKey(eq(businessKey));
-    verify(messageCorrelationBuilderMock).setVariables(argThat(new EqualsMap(null)));
-    verify(messageCorrelationBuilderMock).correlate();
+    verify(messageCorrelationBuilderMock).correlateWithResult();
+    verifyNoMoreInteractions(messageCorrelationBuilderMock);
 
   }
 
@@ -209,13 +445,10 @@ public class MessageRestServiceTest extends AbstractRestServiceTest {
       .then().expect().statusCode(Status.NO_CONTENT.getStatusCode())
       .when().post(MESSAGE_URL);
 
-//    verify(runtimeServiceMock).correlateMessage(eq(messageName), eq(businessKey),
-//        argThat(new EqualsMap(null)), argThat(new EqualsMap(null)));
-
     verify(runtimeServiceMock).createMessageCorrelation(eq(messageName));
     verify(messageCorrelationBuilderMock).processInstanceBusinessKey(eq(businessKey));
-    verify(messageCorrelationBuilderMock).setVariables(argThat(new EqualsMap(null)));
-    verify(messageCorrelationBuilderMock).correlateAll();
+    verify(messageCorrelationBuilderMock).correlateAllWithResult();
+    verifyNoMoreInteractions(messageCorrelationBuilderMock);
 
   }
 
@@ -224,7 +457,7 @@ public class MessageRestServiceTest extends AbstractRestServiceTest {
     String messageName = "aMessage";
 
     doThrow(new MismatchingMessageCorrelationException(messageName, "Expected exception: cannot correlate"))
-      .when(messageCorrelationBuilderMock).correlate();
+      .when(messageCorrelationBuilderMock).correlateWithResult();
 
     Map<String, Object> messageParameters = new HashMap<String, Object>();
     messageParameters.put("messageName", messageName);
@@ -241,7 +474,7 @@ public class MessageRestServiceTest extends AbstractRestServiceTest {
 
     // thrown, if instantiation of the process or signalling the instance fails
     doThrow(new ProcessEngineException("Expected exception"))
-      .when(messageCorrelationBuilderMock).correlate();
+      .when(messageCorrelationBuilderMock).correlateWithResult();
 
     Map<String, Object> messageParameters = new HashMap<String, Object>();
     messageParameters.put("messageName", messageName);
@@ -274,10 +507,9 @@ public class MessageRestServiceTest extends AbstractRestServiceTest {
       .when().post(MESSAGE_URL);
 
     verify(runtimeServiceMock).createMessageCorrelation(eq(messageName));
-    verify(messageCorrelationBuilderMock).processInstanceBusinessKey(eq((String) null));
-    verify(messageCorrelationBuilderMock).setVariables(argThat(new EqualsMap(null)));
     verify(messageCorrelationBuilderMock).tenantId(MockProvider.EXAMPLE_TENANT_ID);
-    verify(messageCorrelationBuilderMock).correlate();
+    verify(messageCorrelationBuilderMock).correlateWithResult();
+    verifyNoMoreInteractions(messageCorrelationBuilderMock);
   }
 
   @Test
@@ -293,10 +525,9 @@ public class MessageRestServiceTest extends AbstractRestServiceTest {
       .when().post(MESSAGE_URL);
 
     verify(runtimeServiceMock).createMessageCorrelation(eq(messageName));
-    verify(messageCorrelationBuilderMock).processInstanceBusinessKey(eq((String) null));
-    verify(messageCorrelationBuilderMock).setVariables(argThat(new EqualsMap(null)));
     verify(messageCorrelationBuilderMock).withoutTenantId();
-    verify(messageCorrelationBuilderMock).correlate();
+    verify(messageCorrelationBuilderMock).correlateWithResult();
+    verifyNoMoreInteractions(messageCorrelationBuilderMock);
   }
 
   @Test
@@ -589,7 +820,7 @@ public class MessageRestServiceTest extends AbstractRestServiceTest {
     messageParameters.put("messageName", messageName);
 
     String message = "expected exception";
-    doThrow(new AuthorizationException(message)).when(messageCorrelationBuilderMock).correlate();
+    doThrow(new AuthorizationException(message)).when(messageCorrelationBuilderMock).correlateWithResult();
 
     given()
       .contentType(POST_JSON_CONTENT_TYPE)
@@ -603,14 +834,14 @@ public class MessageRestServiceTest extends AbstractRestServiceTest {
   }
 
   @Test
-  public void testCorrelateAllThrowsAuthorizationException() {
+  public void testcorrelateAllThrowsAuthorizationException() {
     String messageName = "aMessageName";
     Map<String, Object> messageParameters = new HashMap<String, Object>();
     messageParameters.put("messageName", messageName);
     messageParameters.put("all", true);
 
     String message = "expected exception";
-    doThrow(new AuthorizationException(message)).when(messageCorrelationBuilderMock).correlateAll();
+    doThrow(new AuthorizationException(message)).when(messageCorrelationBuilderMock).correlateAllWithResult();
 
     given()
       .contentType(POST_JSON_CONTENT_TYPE)
@@ -641,7 +872,31 @@ public class MessageRestServiceTest extends AbstractRestServiceTest {
     verify(runtimeServiceMock).createMessageCorrelation(eq(messageName));
     verify(messageCorrelationBuilderMock).processInstanceId(eq(MockProvider.EXAMPLE_PROCESS_INSTANCE_ID));
 
-    verify(messageCorrelationBuilderMock).correlate();
+    verify(messageCorrelationBuilderMock).correlateWithResult();
+  }
+
+  @Test
+  public void testMessageCorrelationWithoutBusinessKey() {
+    when(messageCorrelationBuilderMock.processInstanceBusinessKey(null))
+      .thenThrow(new NullValueException());
+
+    String messageName = "aMessageName";
+
+    Map<String, Object> messageParameters = new HashMap<String, Object>();
+    messageParameters.put("messageName", messageName);
+
+    given()
+      .contentType(POST_JSON_CONTENT_TYPE)
+       .body(messageParameters)
+    .then()
+      .expect().statusCode(Status.NO_CONTENT.getStatusCode())
+    .when().post(MESSAGE_URL);
+
+    verify(runtimeServiceMock).createMessageCorrelation(eq(messageName));
+
+    verify(messageCorrelationBuilderMock, Mockito.never()).processInstanceBusinessKey(anyString());
+    verify(messageCorrelationBuilderMock).correlateWithResult();
+    verifyNoMoreInteractions(messageCorrelationBuilderMock);
   }
 
 }

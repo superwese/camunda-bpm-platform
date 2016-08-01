@@ -48,7 +48,12 @@ public class HistoricDecisionInstanceEntity extends HistoryEvent implements Hist
 
   protected Double collectResultValue;
 
+  protected String rootDecisionInstanceId;
+  protected String decisionRequirementsDefinitionId;
+  protected String decisionRequirementsDefinitionKey;
+
   protected String userId;
+  protected String tenantId;
 
   protected List<HistoricDecisionInputInstance> inputs;
   protected List<HistoricDecisionOutputInstance> outputs;
@@ -109,6 +114,14 @@ public class HistoricDecisionInstanceEntity extends HistoryEvent implements Hist
     this.userId = userId;
   }
 
+  public String getTenantId() {
+    return tenantId;
+  }
+
+  public void setTenantId(String tenantId) {
+    this.tenantId = tenantId;
+  }
+
   @Override
   public List<HistoricDecisionInputInstance> getInputs() {
     if(inputs != null) {
@@ -162,5 +175,29 @@ public class HistoricDecisionInstanceEntity extends HistoryEvent implements Hist
 
   public void setCollectResultValue(Double collectResultValue) {
     this.collectResultValue = collectResultValue;
+  }
+
+  public String getRootDecisionInstanceId() {
+    return rootDecisionInstanceId;
+  }
+
+  public void setRootDecisionInstanceId(String rootDecisionInstanceId) {
+    this.rootDecisionInstanceId = rootDecisionInstanceId;
+  }
+
+  public String getDecisionRequirementsDefinitionId() {
+    return decisionRequirementsDefinitionId;
+  }
+
+  public void setDecisionRequirementsDefinitionId(String decisionRequirementsDefinitionId) {
+    this.decisionRequirementsDefinitionId = decisionRequirementsDefinitionId;
+  }
+
+  public String getDecisionRequirementsDefinitionKey() {
+    return decisionRequirementsDefinitionKey;
+  }
+
+  public void setDecisionRequirementsDefinitionKey(String decisionRequirementsDefinitionKey) {
+    this.decisionRequirementsDefinitionKey = decisionRequirementsDefinitionKey;
   }
 }

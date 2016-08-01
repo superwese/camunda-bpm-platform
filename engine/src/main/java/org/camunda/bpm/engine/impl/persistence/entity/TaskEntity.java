@@ -12,10 +12,12 @@
  */
 package org.camunda.bpm.engine.impl.persistence.entity;
 
+
 import static org.camunda.bpm.engine.impl.util.EnsureUtil.ensureNotNull;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
@@ -39,19 +41,24 @@ import org.camunda.bpm.engine.impl.cmmn.entity.repository.CaseDefinitionEntity;
 import org.camunda.bpm.engine.impl.cmmn.entity.runtime.CaseExecutionEntity;
 import org.camunda.bpm.engine.impl.context.Context;
 import org.camunda.bpm.engine.impl.core.instance.CoreExecution;
+import org.camunda.bpm.engine.impl.core.variable.CoreVariableInstance;
 import org.camunda.bpm.engine.impl.core.variable.scope.AbstractVariableScope;
-import org.camunda.bpm.engine.impl.core.variable.scope.CoreVariableStore;
+import org.camunda.bpm.engine.impl.core.variable.scope.VariableInstanceFactory;
+import org.camunda.bpm.engine.impl.core.variable.scope.VariableInstanceLifecycleListener;
+import org.camunda.bpm.engine.impl.core.variable.scope.VariableListenerInvocationListener;
+import org.camunda.bpm.engine.impl.core.variable.scope.VariableStore;
+import org.camunda.bpm.engine.impl.core.variable.scope.VariableStore.VariablesProvider;
 import org.camunda.bpm.engine.impl.db.DbEntity;
 import org.camunda.bpm.engine.impl.db.EnginePersistenceLogger;
 import org.camunda.bpm.engine.impl.db.HasDbRevision;
 import org.camunda.bpm.engine.impl.db.entitymanager.DbEntityManager;
+import org.camunda.bpm.engine.impl.history.event.HistoryEventTypes;
 import org.camunda.bpm.engine.impl.interceptor.CommandContext;
 import org.camunda.bpm.engine.impl.interceptor.CommandContextListener;
 import org.camunda.bpm.engine.impl.pvm.runtime.PvmExecutionImpl;
 import org.camunda.bpm.engine.impl.task.TaskDefinition;
 import org.camunda.bpm.engine.impl.task.delegate.TaskListenerInvocation;
 import org.camunda.bpm.engine.impl.util.ClockUtil;
-import org.camunda.bpm.engine.impl.variable.AbstractPersistentVariableStore;
 import org.camunda.bpm.engine.management.Metrics;
 import org.camunda.bpm.engine.task.DelegationState;
 import org.camunda.bpm.engine.task.IdentityLink;
@@ -66,8 +73,9 @@ import org.camunda.bpm.model.xml.type.ModelElementType;
  * @author Tom Baeyens
  * @author Joram Barrez
  * @author Falko Menge
+ * @author Deivarayan Azhagappan
  */
-public class TaskEntity extends AbstractVariableScope implements Task, DelegateTask, Serializable, DbEntity, HasDbRevision, CommandContextListener {
+public class TaskEntity extends AbstractVariableScope implements Task, DelegateTask, Serializable, DbEntity, HasDbRevision, CommandContextListener, VariablesProvider<VariableInstanceEntity> {
 
   protected static final EnginePersistenceLogger LOG = ProcessEngineLogger.PERSISTENCE_LOGGER;
 
@@ -124,7 +132,10 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
   protected boolean isFormKeyInitialized = false;
   protected String formKey;
 
-  protected transient AbstractPersistentVariableStore variableStore;
+  @SuppressWarnings({ "unchecked" })
+  protected transient VariableStore<VariableInstanceEntity> variableStore
+    = new VariableStore<VariableInstanceEntity>(this, new TaskEntityReferencer(this));
+
 
   protected transient boolean skipCustomListeners = false;
 
@@ -132,6 +143,8 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
    * contains all changed properties of this entity
    */
   protected transient Map<String, PropertyChange> propertyChanges = new HashMap<String, PropertyChange>();
+
+  protected transient List<PropertyChange> identityLinkChanges = new ArrayList<PropertyChange>();
 
   // name references of tracked properties
   public static final String ASSIGNEE = "assignee";
@@ -152,7 +165,6 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
 
   public TaskEntity(String taskId) {
     this.id = taskId;
-    this.variableStore = createVariableStore();
   }
 
   /** creates and initializes a new persistent task. */
@@ -452,13 +464,35 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
 
   // variables ////////////////////////////////////////////////////////////////
 
-  protected AbstractPersistentVariableStore createVariableStore() {
-    return new TaskEntityVariableStore(this);
+  @Override
+  @SuppressWarnings({ "unchecked", "rawtypes" })
+  protected VariableStore<CoreVariableInstance> getVariableStore() {
+    return (VariableStore) variableStore;
   }
 
   @Override
-  protected CoreVariableStore getVariableStore() {
-    return variableStore;
+  @SuppressWarnings({ "unchecked", "rawtypes" })
+  protected VariableInstanceFactory<CoreVariableInstance> getVariableInstanceFactory() {
+    return (VariableInstanceFactory) VariableInstanceEntityFactory.INSTANCE;
+  }
+
+  @Override
+  @SuppressWarnings({ "unchecked", "rawtypes" })
+  protected List<VariableInstanceLifecycleListener<CoreVariableInstance>> getVariableInstanceLifecycleListeners() {
+    return Arrays.<VariableInstanceLifecycleListener<CoreVariableInstance>>asList(
+        (VariableInstanceLifecycleListener) VariableInstanceEntityPersistenceListener.INSTANCE,
+        (VariableInstanceLifecycleListener) VariableInstanceSequenceCounterListener.INSTANCE,
+        (VariableInstanceLifecycleListener) VariableInstanceHistoryListener.INSTANCE,
+        (VariableInstanceLifecycleListener) VariableListenerInvocationListener.INSTANCE
+      );
+  }
+
+  @Override
+  public Collection<VariableInstanceEntity> provideVariables() {
+    return Context
+        .getCommandContext()
+        .getVariableInstanceManager()
+        .findVariableInstancesByTaskId(id);
   }
 
   @Override
@@ -470,22 +504,6 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
       return caseExecution;
     }
     return null;
-  }
-
-  protected void initializeVariableInstanceBackPointer(VariableInstanceEntity variableInstance) {
-    variableInstance.setTaskId(id);
-    variableInstance.setExecutionId(executionId);
-    variableInstance.setProcessInstanceId(processInstanceId);
-    variableInstance.setCaseExecutionId(caseExecutionId);
-    variableInstance.setCaseInstanceId(caseInstanceId);
-    variableInstance.setTenantId(tenantId);
-  }
-
-  protected List<VariableInstanceEntity> loadVariableInstances() {
-    return Context
-      .getCommandContext()
-      .getVariableInstanceManager()
-      .findVariableInstancesByTaskId(id);
   }
 
   @Override
@@ -613,15 +631,26 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
   public IdentityLinkEntity addIdentityLink(String userId, String groupId, String type) {
     ensureTaskActive();
 
-    IdentityLinkEntity identityLinkEntity = IdentityLinkEntity.createAndInsert();
-    getIdentityLinks().add(identityLinkEntity);
+    IdentityLinkEntity identityLink = newIdentityLink(userId, groupId, type);
+    identityLink.insert();
+    getIdentityLinks().add(identityLink);
+
+    fireAddIdentityLinkAuthorizationProvider(type, userId, groupId);
+    return identityLink;
+  }
+
+  public void fireIdentityLinkHistoryEvents(String userId, String groupId, String type, HistoryEventTypes historyEventType) {
+    IdentityLinkEntity identityLinkEntity = newIdentityLink(userId, groupId, type);
+    identityLinkEntity.fireHistoricIdentityLinkEvent(historyEventType);
+  }
+
+  public IdentityLinkEntity newIdentityLink(String userId, String groupId, String type) {
+    IdentityLinkEntity identityLinkEntity = new IdentityLinkEntity();
     identityLinkEntity.setTask(this);
     identityLinkEntity.setUserId(userId);
     identityLinkEntity.setGroupId(groupId);
     identityLinkEntity.setType(type);
-
-    fireAddIdentityLinkAuthorizationProvider(type, userId, groupId);
-
+    identityLinkEntity.setTenantId(getTenantId());
     return identityLinkEntity;
   }
 
@@ -635,11 +664,7 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
 
     for (IdentityLinkEntity identityLink: identityLinks) {
       fireDeleteIdentityLinkAuthorizationProvider(type, userId, groupId);
-
-      Context
-        .getCommandContext()
-        .getDbEntityManager()
-        .delete(identityLink);
+      identityLink.delete();
     }
   }
 
@@ -780,6 +805,7 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
       return;
     }
 
+    addIdentityLinkChanges(IdentityLinkType.ASSIGNEE, oldAssignee, assignee);
     propertyChanged(ASSIGNEE, oldAssignee, assignee);
     this.assignee = assignee;
 
@@ -790,6 +816,7 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
       fireEvent(TaskListener.EVENTNAME_ASSIGNMENT);
       if (commandContext.getDbEntityManager().contains(this)) {
         fireAssigneeAuthorizationProvider(oldAssignee, assignee);
+        fireHistoricIdentityLinks();
       }
     }
   }
@@ -809,6 +836,7 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
       return;
     }
 
+    addIdentityLinkChanges(IdentityLinkType.OWNER, oldOwner, owner);
     propertyChanged(OWNER, oldOwner, owner);
     this.owner = owner;
 
@@ -817,6 +845,7 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
     // setOwner outside a service method.  E.g. while creating a new task.
     if (commandContext != null && commandContext.getDbEntityManager().contains(this)) {
       fireOwnerAuthorizationProvider(oldOwner, owner);
+      this.fireHistoricIdentityLinks();
     }
 
   }
@@ -1171,6 +1200,13 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
   }
 
   public void setTaskDefinitionKey(String taskDefinitionKey) {
+    if ((taskDefinitionKey == null && this.taskDefinitionKey != null)
+     || (taskDefinitionKey != null && !taskDefinitionKey.equals(this.taskDefinitionKey))) {
+      this.taskDefinition = null;
+      this.formKey = null;
+      this.isFormKeyInitialized = false;
+    }
+
     this.taskDefinitionKey = taskDefinitionKey;
   }
 
@@ -1283,6 +1319,10 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
     this.followUpDate = followUpDate;
   }
 
+  public Collection<VariableInstanceEntity> getVariablesInternal() {
+    return variableStore.getVariables();
+  }
+
   @Override
   public void onCommandContextClose(CommandContext commandContext) {
     if(commandContext.getDbEntityManager().isDirty(this)) {
@@ -1311,8 +1351,24 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
     if (commandContext != null) {
       List<PropertyChange> values = new ArrayList<PropertyChange>(propertyChanges.values());
       commandContext.getOperationLogManager().logTaskOperations(operation, this, values);
+      fireHistoricIdentityLinks();
+      propertyChanges.clear();
     }
-    propertyChanges.clear();
+  }
+
+  public void fireHistoricIdentityLinks() {
+    for (PropertyChange propertyChange : identityLinkChanges) {
+      String oldValue = propertyChange.getOrgValueString();
+      String propertyName = propertyChange.getPropertyName();
+      if (oldValue != null) {
+        fireIdentityLinkHistoryEvents(oldValue, null, propertyName, HistoryEventTypes.IDENTITY_LINK_DELETE);
+      }
+      String newValue = propertyChange.getNewValueString();
+      if (newValue != null) {
+        fireIdentityLinkHistoryEvents(newValue, null, propertyName, HistoryEventTypes.IDENTITY_LINK_ADD);
+      }
+    }
+    identityLinkChanges.clear();
   }
 
   @Override
@@ -1353,4 +1409,7 @@ public class TaskEntity extends AbstractVariableScope implements Task, DelegateT
     }
   }
 
+  public void addIdentityLinkChanges(String type, String oldProperty, String newProperty) {
+    identityLinkChanges.add(new PropertyChange(type, oldProperty, newProperty));
+  }
 }

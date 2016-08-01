@@ -398,6 +398,8 @@ public class SentryExitCriteriaTest extends CmmnProcessEngineTestCase {
 
   }
 
+ 
+
   @Deployment(resources = {"org/camunda/bpm/engine/test/cmmn/sentry/SentryExitCriteriaTest.testExitTaskByInstanceCreation.cmmn"})
   public void testExitTaskByInstanceCreation() {
     // given + when
@@ -648,5 +650,4 @@ public class SentryExitCriteriaTest extends CmmnProcessEngineTestCase {
     assertNull(secondTask);
 
   }
-
 }

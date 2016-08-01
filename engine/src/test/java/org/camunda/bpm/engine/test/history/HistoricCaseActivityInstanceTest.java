@@ -33,6 +33,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 
+import org.camunda.bpm.engine.ProcessEngineConfiguration;
 import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.history.HistoricCaseActivityInstance;
 import org.camunda.bpm.engine.history.HistoricCaseActivityInstanceQuery;
@@ -51,12 +52,14 @@ import org.camunda.bpm.engine.runtime.CaseInstance;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.camunda.bpm.engine.task.Task;
 import org.camunda.bpm.engine.test.Deployment;
+import org.camunda.bpm.engine.test.RequiredHistoryLevel;
 import org.camunda.bpm.engine.variable.Variables;
 import org.hamcrest.Matcher;
 
 /**
  * @author Sebastian Menski
  */
+@RequiredHistoryLevel(ProcessEngineConfiguration.HISTORY_AUDIT)
 public class HistoricCaseActivityInstanceTest extends CmmnProcessEngineTestCase {
 
   @Deployment(resources={"org/camunda/bpm/engine/test/api/cmmn/emptyStageCase.cmmn"})
@@ -595,9 +598,10 @@ public class HistoricCaseActivityInstanceTest extends CmmnProcessEngineTestCase 
 
     String instanceId = caseService.createCaseExecutionQuery().activityId("PI_HumanTask_1").list().get(0).getId();
 
+    String tablePrefix = processEngineConfiguration.getDatabaseTablePrefix();
     String tableName = managementService.getTableName(HistoricCaseActivityInstance.class);
 
-    assertEquals("ACT_HI_CASEACTINST", tableName);
+    assertEquals(tablePrefix + "ACT_HI_CASEACTINST", tableName);
     assertEquals(tableName, managementService.getTableName(HistoricCaseActivityInstanceEntity.class));
 
     assertEquals(4, historyService.createNativeHistoricCaseActivityInstanceQuery().sql("SELECT * FROM " + tableName).list().size());

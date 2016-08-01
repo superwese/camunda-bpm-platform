@@ -12,10 +12,16 @@
  */
 package org.camunda.bpm.engine.test.api.runtime.util;
 
+import java.util.Collections;
+import java.util.List;
+
+import org.camunda.bpm.engine.impl.core.variable.CoreVariableInstance;
 import org.camunda.bpm.engine.impl.core.variable.scope.AbstractVariableScope;
-import org.camunda.bpm.engine.impl.core.variable.scope.CoreVariableStore;
-import org.camunda.bpm.engine.impl.core.variable.scope.MapBasedVariableStore;
-import org.camunda.bpm.engine.impl.core.variable.scope.SimpleVariableStore;
+import org.camunda.bpm.engine.impl.core.variable.scope.SimpleVariableInstance;
+import org.camunda.bpm.engine.impl.core.variable.scope.SimpleVariableInstance.SimpleVariableInstanceFactory;
+import org.camunda.bpm.engine.impl.core.variable.scope.VariableInstanceFactory;
+import org.camunda.bpm.engine.impl.core.variable.scope.VariableInstanceLifecycleListener;
+import org.camunda.bpm.engine.impl.core.variable.scope.VariableStore;
 
 /**
  * @author Daniel Meyer
@@ -23,16 +29,23 @@ import org.camunda.bpm.engine.impl.core.variable.scope.SimpleVariableStore;
  */
 public class TestVariableScope extends AbstractVariableScope {
 
-  private static final long serialVersionUID = 1L;
+  protected VariableStore<SimpleVariableInstance> variableStore = new VariableStore<SimpleVariableInstance>();
 
-  protected MapBasedVariableStore variableStore = new SimpleVariableStore();
-
-  protected CoreVariableStore getVariableStore() {
-    return variableStore;
+  protected VariableStore<CoreVariableInstance> getVariableStore() {
+    return (VariableStore) variableStore;
   }
 
   public AbstractVariableScope getParentVariableScope() {
     return null;
   }
 
+  @Override
+  protected VariableInstanceFactory<CoreVariableInstance> getVariableInstanceFactory() {
+    return (VariableInstanceFactory) SimpleVariableInstanceFactory.INSTANCE;
+  }
+
+  @Override
+  protected List<VariableInstanceLifecycleListener<CoreVariableInstance>> getVariableInstanceLifecycleListeners() {
+    return Collections.emptyList();
+  }
 }

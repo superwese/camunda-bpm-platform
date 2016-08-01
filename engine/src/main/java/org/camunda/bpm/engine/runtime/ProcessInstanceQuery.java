@@ -198,6 +198,17 @@ public interface ProcessInstanceQuery extends Query<ProcessInstanceQuery, Proces
   /** Only selects process instances which have no tenant id. */
   ProcessInstanceQuery withoutTenantId();
 
+  /**
+   * <p>Only selects process instances with leaf activity instances
+   * or transition instances (async before, async after) in
+   * at least one of the given activity ids.
+   *
+   * <p><i>Leaf instance</i> means this filter works for instances
+   * of a user task is matched, but not the embedded sub process it is
+   * contained in.
+   */
+  ProcessInstanceQuery activityIdIn(String... activityIds);
+
   //ordering /////////////////////////////////////////////////////////////////
 
   /** Order by id (needs to be followed by {@link #asc()} or {@link #desc()}). */
@@ -214,5 +225,4 @@ public interface ProcessInstanceQuery extends Query<ProcessInstanceQuery, Proces
    * Note that the ordering of process instances without tenant id is database-specific.
    */
   ProcessInstanceQuery orderByTenantId();
-
 }

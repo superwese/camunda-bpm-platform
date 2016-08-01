@@ -14,17 +14,22 @@ package org.camunda.bpm.engine.impl.pvm.runtime;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+
 import org.camunda.bpm.engine.ProcessEngineServices;
 import org.camunda.bpm.engine.delegate.BpmnModelExecutionContext;
 import org.camunda.bpm.engine.delegate.ProcessEngineServicesAware;
 import org.camunda.bpm.engine.impl.cmmn.execution.CaseExecutionImpl;
 import org.camunda.bpm.engine.impl.cmmn.execution.CmmnExecution;
 import org.camunda.bpm.engine.impl.cmmn.model.CmmnCaseDefinition;
-import org.camunda.bpm.engine.impl.core.variable.scope.CoreVariableStore;
-import org.camunda.bpm.engine.impl.core.variable.scope.SimpleVariableStore;
+import org.camunda.bpm.engine.impl.core.variable.CoreVariableInstance;
+import org.camunda.bpm.engine.impl.core.variable.scope.SimpleVariableInstance.SimpleVariableInstanceFactory;
+import org.camunda.bpm.engine.impl.core.variable.scope.VariableInstanceFactory;
+import org.camunda.bpm.engine.impl.core.variable.scope.VariableInstanceLifecycleListener;
+import org.camunda.bpm.engine.impl.core.variable.scope.VariableStore;
 import org.camunda.bpm.engine.impl.pvm.PvmProcessInstance;
 import org.camunda.bpm.engine.impl.pvm.delegate.ActivityExecution;
 import org.camunda.bpm.model.bpmn.BpmnModelInstance;
@@ -72,7 +77,7 @@ public class ExecutionImpl extends PvmExecutionImpl implements
 
   // variables/////////////////////////////////////////////////////////////////
 
-  protected SimpleVariableStore variableStore = new SimpleVariableStore();
+  protected VariableStore<CoreVariableInstance> variableStore = new VariableStore<CoreVariableInstance>();
 
   // lifecycle methods ////////////////////////////////////////////////////////
 
@@ -283,8 +288,18 @@ public class ExecutionImpl extends PvmExecutionImpl implements
 
   // getters and setters //////////////////////////////////////////////////////
 
-  protected CoreVariableStore getVariableStore() {
+  protected VariableStore<CoreVariableInstance> getVariableStore() {
     return variableStore;
+  }
+
+  @Override
+  protected VariableInstanceFactory<CoreVariableInstance> getVariableInstanceFactory() {
+    return (VariableInstanceFactory) SimpleVariableInstanceFactory.INSTANCE;
+  }
+
+  @Override
+  protected List<VariableInstanceLifecycleListener<CoreVariableInstance>> getVariableInstanceLifecycleListeners() {
+    return Collections.emptyList();
   }
 
   public ExecutionImpl getReplacedBy() {
@@ -322,5 +337,4 @@ public class ExecutionImpl extends PvmExecutionImpl implements
   public void fireHistoricProcessStartEvent() {
     // do nothing
   }
-
 }

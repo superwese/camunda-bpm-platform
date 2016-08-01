@@ -32,6 +32,7 @@ import org.camunda.bpm.engine.authorization.Permissions;
 import org.camunda.bpm.engine.authorization.Resource;
 import org.camunda.bpm.engine.identity.Group;
 import org.camunda.bpm.engine.identity.User;
+import org.camunda.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl;
 import org.camunda.bpm.engine.impl.identity.Authentication;
 import org.camunda.bpm.engine.impl.test.PluggableProcessEngineTestCase;
 import org.camunda.bpm.engine.query.Query;
@@ -610,10 +611,17 @@ public abstract class AuthorizationTest extends PluggableProcessEngineTestCase {
     } catch (ProcessEngineException e) {}
   }
 
+  public Permission getDefaultTaskPermissionForUser() {
+    // get the default task assignee permission
+    ProcessEngineConfigurationImpl processEngineConfiguration = (ProcessEngineConfigurationImpl) processEngine
+      .getProcessEngineConfiguration();
+
+    return processEngineConfiguration.getDefaultUserPermissionForTask();
+  }
+
   // helper ////////////////////////////////////////////////////////////////////
 
   protected VariableMap getVariables() {
     return Variables.createVariables().putValue(VARIABLE_NAME, VARIABLE_VALUE);
   }
-
 }

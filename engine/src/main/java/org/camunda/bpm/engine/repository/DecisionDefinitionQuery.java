@@ -39,7 +39,7 @@ public interface DecisionDefinitionQuery extends Query<DecisionDefinitionQuery, 
 
   /**
    * Only select decision definitions where the category matches the given parameter.
-   * The syntax that should be used is the same as in SQL, eg. %activiti%
+   * The syntax that should be used is the same as in SQL, eg. %category%
    *
    * @param decisionDefinitionCategoryLike the pattern to match the decision definition category
    */
@@ -61,7 +61,7 @@ public interface DecisionDefinitionQuery extends Query<DecisionDefinitionQuery, 
 
   /**
    * Only select decision definitions where the key matches the given parameter.
-   * The syntax that should be used is the same as in SQL, eg. %activiti%
+   * The syntax that should be used is the same as in SQL, eg. %key%
    *
    * @param decisionDefinitionKeyLike the pattern to match the decision definition key
    */
@@ -69,7 +69,7 @@ public interface DecisionDefinitionQuery extends Query<DecisionDefinitionQuery, 
 
   /**
    * Only select decision definitions where the name matches the given parameter.
-   * The syntax that should be used is the same as in SQL, eg. %activiti%
+   * The syntax that should be used is the same as in SQL, eg. %name%
    *
    * @param decisionDefinitionNameLike the pattern to match the decision definition name
    */
@@ -112,11 +112,30 @@ public interface DecisionDefinitionQuery extends Query<DecisionDefinitionQuery, 
 
   /**
    * Only select decision definition with a resource name like the given.
-   * The syntax that should be used is the same as in SQL, eg. %activiti%
+   * The syntax that should be used is the same as in SQL, eg. %resourceName%
    *
    * @param resourceNameLike the pattern to match the resource name
    */
   DecisionDefinitionQuery decisionDefinitionResourceNameLike(String resourceNameLike);
+
+  /**
+   * Only select decision definitions which belongs to a decision requirements definition with the given id.
+   *
+   * @param decisionRequirementsDefinitionId id of the related decision requirements definition
+   */
+  DecisionDefinitionQuery decisionRequirementsDefinitionId(String decisionRequirementsDefinitionId);
+
+  /**
+   * Only select decision definitions which belongs to a decision requirements definition with the given key.
+   *
+   * @param decisionRequirementsDefinitionKey key of the related decision requirements definition
+   */
+  DecisionDefinitionQuery decisionRequirementsDefinitionKey(String decisionRequirementsDefinitionKey);
+
+  /**
+   * Only select decision definitions which belongs to no decision requirements definition.
+   */
+  DecisionDefinitionQuery withoutDecisionRequirementsDefinition();
 
   /** Only select decision definitions with one of the given tenant ids. */
   DecisionDefinitionQuery tenantIdIn(String... tenantIds);
@@ -157,7 +176,7 @@ public interface DecisionDefinitionQuery extends Query<DecisionDefinitionQuery, 
   DecisionDefinitionQuery orderByDeploymentId();
 
   /** Order by tenant id (needs to be followed by {@link #asc()} or {@link #desc()}).
-   * Note that the ordering of decision instances without tenant id is database-specific. */
+   * Note that the ordering of decision definitions without tenant id is database-specific. */
   DecisionDefinitionQuery orderByTenantId();
 
 }

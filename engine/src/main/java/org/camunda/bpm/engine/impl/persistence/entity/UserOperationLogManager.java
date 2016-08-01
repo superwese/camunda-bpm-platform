@@ -22,8 +22,8 @@ import org.camunda.bpm.engine.impl.UserOperationLogQueryImpl;
 import org.camunda.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl;
 import org.camunda.bpm.engine.impl.context.Context;
 import org.camunda.bpm.engine.impl.history.event.HistoryEvent;
+import org.camunda.bpm.engine.impl.history.event.HistoryEventProcessor;
 import org.camunda.bpm.engine.impl.history.event.UserOperationLogEntryEventEntity;
-import org.camunda.bpm.engine.impl.history.handler.HistoryEventHandler;
 import org.camunda.bpm.engine.impl.history.producer.HistoryEventProducer;
 import org.camunda.bpm.engine.impl.interceptor.CommandContext;
 import org.camunda.bpm.engine.impl.oplog.UserOperationLogContext;
@@ -58,16 +58,17 @@ public class UserOperationLogManager extends AbstractHistoricManager {
     }
   }
 
-  protected void fireUserOperationLog(UserOperationLogContext context) {
-    context.setUserId(getAuthenticatedUserId());
+  protected void fireUserOperationLog(final UserOperationLogContext context) {
+    if (context.getUserId() == null) {
+      context.setUserId(getAuthenticatedUserId());
+    }
 
-    ProcessEngineConfigurationImpl configuration = Context.getProcessEngineConfiguration();
-
-    HistoryEventProducer eventProducer = configuration.getHistoryEventProducer();
-    HistoryEventHandler eventHandler = configuration.getHistoryEventHandler();
-
-    List<HistoryEvent> historyEvents = eventProducer.createUserOperationLogEvents(context);
-    eventHandler.handleEvents(historyEvents);
+    HistoryEventProcessor.processHistoryEvents(new HistoryEventProcessor.HistoryEventCreator() {
+      @Override
+      public List<HistoryEvent> createHistoryEvents(HistoryEventProducer producer) {
+        return producer.createUserOperationLogEvents(context);
+      }
+    });
   }
 
   public void logUserOperations(UserOperationLogContext context) {
@@ -100,13 +101,13 @@ public class UserOperationLogManager extends AbstractHistoricManager {
     }
   }
 
-  public void logProcessInstanceOperation(String operation, String processInstanceId, String processDefinitionId, String processDefinitionKey, PropertyChange propertyChange) {
+  public void logProcessInstanceOperation(String operation, String processInstanceId, String processDefinitionId, String processDefinitionKey, List<PropertyChange> propertyChanges) {
     if (isUserOperationLogEnabled()) {
 
       UserOperationLogContext context = new UserOperationLogContext();
       UserOperationLogContextEntryBuilder entryBuilder =
           UserOperationLogContextEntryBuilder.entry(operation, EntityTypes.PROCESS_INSTANCE)
-            .propertyChanges(propertyChange)
+            .propertyChanges(propertyChanges)
             .processInstanceId(processInstanceId)
             .processDefinitionId(processDefinitionId)
             .processDefinitionKey(processDefinitionKey);
@@ -307,6 +308,20 @@ public class UserOperationLogManager extends AbstractHistoricManager {
 
   protected boolean isUserOperationLogEnabledOnCommandContext() {
     return Context.getCommandContext().isUserOperationLogEnabled();
+  }
+
+  public void logBatchOperation(String operation, String batchId, PropertyChange propertyChange) {
+    if(isUserOperationLogEnabled()) {
+      UserOperationLogContext context = new UserOperationLogContext();
+      UserOperationLogContextEntryBuilder entryBuilder =
+        UserOperationLogContextEntryBuilder.entry(operation, EntityTypes.BATCH)
+          .batchId(batchId)
+          .propertyChanges(propertyChange);
+
+      context.addEntry(entryBuilder.create());
+
+      fireUserOperationLog(context);
+    }
   }
 
 }

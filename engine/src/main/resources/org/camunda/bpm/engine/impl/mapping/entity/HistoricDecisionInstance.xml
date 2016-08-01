@@ -22,7 +22,11 @@
       ACT_ID_,
       EVAL_TIME_,
       COLLECT_VALUE_,
-      USER_ID_)
+      USER_ID_,
+      ROOT_DEC_INST_ID_,
+      DEC_REQ_ID_,
+      DEC_REQ_KEY_,
+      TENANT_ID_)
     values (#{id, jdbcType=VARCHAR},
             #{decisionDefinitionId, jdbcType=VARCHAR},
             #{decisionDefinitionKey, jdbcType=VARCHAR},
@@ -37,7 +41,11 @@
             #{activityId, jdbcType=VARCHAR},
             #{evaluationTime, jdbcType=TIMESTAMP},
             #{collectResultValue, jdbcType=DOUBLE},
-            #{userId, jdbcType=VARCHAR}
+            #{userId, jdbcType=VARCHAR},
+            #{rootDecisionInstanceId, jdbcType=VARCHAR},
+            #{decisionRequirementsDefinitionId, jdbcType=VARCHAR},
+            #{decisionRequirementsDefinitionKey, jdbcType=VARCHAR},
+            #{tenantId, jdbcType=VARCHAR}
            )
   </insert>
   
@@ -65,13 +73,18 @@
     <result property="evaluationTime" column="EVAL_TIME_" jdbcType="TIMESTAMP"/>
     <result property="collectResultValue" column="COLLECT_VALUE_" jdbcType="DOUBLE"/>
     <result property="userId" column="USER_ID_" jdbcType="VARCHAR"/>
+    <result property="rootDecisionInstanceId" column="ROOT_DEC_INST_ID_" jdbcType="VARCHAR"/>
+    <result property="decisionRequirementsDefinitionId" column="DEC_REQ_ID_" jdbcType="VARCHAR"/>
+    <result property="decisionRequirementsDefinitionKey" column="DEC_REQ_KEY_" jdbcType="VARCHAR"/>
+    <result property="tenantId" column="TENANT_ID_" jdbcType="VARCHAR"/>
   </resultMap>
 
   <!-- select -->
-  
+
   <select id="selectHistoricDecisionInstancesByDecisionDefinitionId" parameterType="org.camunda.bpm.engine.impl.db.ListQueryParameterObject" resultMap="historicDecisionInstanceResultMap">
-    select * from ${prefix}ACT_HI_DECINST 
+    select * from ${prefix}ACT_HI_DECINST RES
     where DEC_DEF_ID_ = #{parameter, jdbcType=VARCHAR}
+    <include refid="org.camunda.bpm.engine.impl.persistence.entity.TenantEntity.queryTenantCheck" />
   </select>
 
   <select id="selectHistoricDecisionInstancesByQueryCriteria" parameterType="org.camunda.bpm.engine.impl.HistoricDecisionInstanceQueryImpl" resultMap="historicDecisionInstanceResultMap">
@@ -109,7 +122,7 @@
   
   <select id="selectHistoricDecisionInstancesByNativeQuery_mssql_or_db2" parameterType="java.util.Map" resultMap="historicDecisionInstanceResultMap">
     <if test="resultType == 'LIST_PAGE'">
-        ${limitBeforeNativeQuery}
+      ${limitBeforeNativeQuery}
     </if>
     ${sql}
     <if test="resultType == 'LIST_PAGE'">
@@ -121,6 +134,19 @@
 
   <sql id="selectHistoricDecisionInstancesByQueryCriteriaSql">
     from ${prefix}ACT_HI_DECINST RES
+
+    <if test="authCheck.isAuthorizationCheckEnabled &amp;&amp; authCheck.authUserId != null">
+      INNER JOIN (
+        SELECT DISTINCT
+            SELF.DEC_DEF_KEY_ AS KEY_
+        FROM
+            ${prefix}ACT_HI_DECINST SELF
+        WHERE
+            <include refid="org.camunda.bpm.engine.impl.persistence.entity.AuthorizationEntity.querySingleAuthorizationCheck" />
+      ) AUTH
+      ON AUTH.KEY_ = RES.DEC_DEF_KEY_
+    </if>
+
     <where>
       <if test="decisionInstanceId != null">
         RES.ID_ = #{decisionInstanceId}
@@ -179,9 +205,38 @@
       <if test="evaluatedAfter != null">
         and RES.EVAL_TIME_ &gt;= #{evaluatedAfter}
       </if>
-
-      <include refid="org.camunda.bpm.engine.impl.persistence.entity.AuthorizationEntity.queryAuthorizationCheck" />
       
+      <if test="userId != null">
+        and RES.USER_ID_ = #{userId} 
+      </if>
+      
+      <if test="rootDecisionInstanceId != null">
+        and (RES.ROOT_DEC_INST_ID_ = #{rootDecisionInstanceId} or 
+          (RES.ROOT_DEC_INST_ID_ is null and RES.ID_ = #{rootDecisionInstanceId}))
+      </if>
+      
+      <if test="rootDecisionInstancesOnly">
+        and RES.ROOT_DEC_INST_ID_ is null
+      </if>
+      
+      <if test="decisionRequirementsDefinitionId != null">
+        and RES.DEC_REQ_ID_ = #{decisionRequirementsDefinitionId}
+      </if>
+      
+      <if test="decisionRequirementsDefinitionKey != null">
+        and RES.DEC_REQ_KEY_ = #{decisionRequirementsDefinitionKey}
+      </if>
+
+      <if test="tenantIds != null &amp;&amp; tenantIds.length > 0">
+        and RES.TENANT_ID_ in
+        <foreach item="tenantId" index="index" collection="tenantIds"
+                 open="(" separator="," close=")">
+          #{tenantId}
+        </foreach>
+      </if>
+
+      <include refid="org.camunda.bpm.engine.impl.persistence.entity.TenantEntity.queryTenantCheck" />
+
     </where>
   </sql>
 

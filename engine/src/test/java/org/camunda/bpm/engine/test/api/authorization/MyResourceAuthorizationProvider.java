@@ -14,10 +14,12 @@ package org.camunda.bpm.engine.test.api.authorization;
 
 import org.camunda.bpm.engine.filter.Filter;
 import org.camunda.bpm.engine.identity.Group;
+import org.camunda.bpm.engine.identity.Tenant;
 import org.camunda.bpm.engine.identity.User;
 import org.camunda.bpm.engine.impl.cfg.auth.ResourceAuthorizationProvider;
 import org.camunda.bpm.engine.impl.persistence.entity.AuthorizationEntity;
 import org.camunda.bpm.engine.repository.DecisionDefinition;
+import org.camunda.bpm.engine.repository.DecisionRequirementsDefinition;
 import org.camunda.bpm.engine.repository.Deployment;
 import org.camunda.bpm.engine.repository.ProcessDefinition;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
@@ -61,7 +63,19 @@ public class MyResourceAuthorizationProvider implements ResourceAuthorizationPro
     return null;
   }
 
+  public AuthorizationEntity[] newTenant(Tenant tenant) {
+    return null;
+  }
+
   public AuthorizationEntity[] groupMembershipCreated(String groupId, String userId) {
+    return null;
+  }
+
+  public AuthorizationEntity[] tenantMembershipCreated(Tenant tenant, User user) {
+    return null;
+  }
+
+  public AuthorizationEntity[] tenantMembershipCreated(Tenant tenant, Group group) {
     return null;
   }
 
@@ -136,8 +150,11 @@ public class MyResourceAuthorizationProvider implements ResourceAuthorizationPro
     DELETE_GROUP_IDENTITY_LINK_GROUP = null;
   }
 
-  @Override
   public AuthorizationEntity[] newDecisionDefinition(DecisionDefinition decisionDefinition) {
+    return null;
+  }
+
+  public AuthorizationEntity[] newDecisionRequirementsDefinition(DecisionRequirementsDefinition decisionRequirementsDefinition) {
     return null;
   }
 

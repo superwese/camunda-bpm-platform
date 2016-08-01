@@ -40,7 +40,6 @@ public class ProcessApplicationExecutionListenerTest extends AbstractFoxPlatform
       .addAsLibraries(DeploymentHelper.getEngineCdi())
       .addAsResource("META-INF/processes.xml", "META-INF/processes.xml")
       .addClass(AbstractFoxPlatformIntegrationTest.class)
-      .addClass(TestContainer.class)
       .addClass(ExecutionListenerProcessApplication.class)
       .addAsResource("org/camunda/bpm/integrationtest/functional/event/ProcessApplicationEventSupportTest.testExecutionListener.bpmn20.xml");
 
@@ -56,7 +55,7 @@ public class ProcessApplicationExecutionListenerTest extends AbstractFoxPlatform
 
     Integer listenerInvocationCount = (Integer) runtimeService.getVariable(processInstance.getId(), ExecutionListenerProcessApplication.LISTENER_INVOCATION_COUNT);
     Assert.assertNotNull(listenerInvocationCount);
-    Assert.assertEquals(4, listenerInvocationCount.intValue());
+    Assert.assertEquals(5, listenerInvocationCount.intValue());
   }
 
 }

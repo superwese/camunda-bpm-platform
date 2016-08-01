@@ -25,6 +25,7 @@ public class ExternalTaskDto {
   protected String activityId;
   protected String activityInstanceId;
   protected String errorMessage;
+  protected String errorDetails;
   protected String executionId;
   protected String id;
   protected Date lockExpirationTime;
@@ -36,6 +37,7 @@ public class ExternalTaskDto {
   protected String workerId;
   protected String topicName;
   protected String tenantId;
+  protected long priority;
 
   public String getActivityId() {
     return activityId;
@@ -80,6 +82,14 @@ public class ExternalTaskDto {
     return tenantId;
   }
 
+  public long getPriority() {
+    return priority;
+  }
+
+  public String getErrorDetails() {
+    return errorDetails;
+  }
+
   public static ExternalTaskDto fromExternalTask(ExternalTask task) {
     ExternalTaskDto dto = new ExternalTaskDto();
     dto.activityId = task.getActivityId();
@@ -96,6 +106,7 @@ public class ExternalTaskDto {
     dto.topicName = task.getTopicName();
     dto.workerId = task.getWorkerId();
     dto.tenantId = task.getTenantId();
+    dto.priority = task.getPriority();
 
     return dto;
   }

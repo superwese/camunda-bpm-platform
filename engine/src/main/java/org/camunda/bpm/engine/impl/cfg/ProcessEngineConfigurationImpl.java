@@ -63,6 +63,8 @@ import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.RepositoryService;
 import org.camunda.bpm.engine.RuntimeService;
 import org.camunda.bpm.engine.TaskService;
+import org.camunda.bpm.engine.authorization.Permission;
+import org.camunda.bpm.engine.authorization.Permissions;
 import org.camunda.bpm.engine.impl.AuthorizationServiceImpl;
 import org.camunda.bpm.engine.impl.DecisionServiceImpl;
 import org.camunda.bpm.engine.impl.DefaultArtifactFactory;
@@ -72,12 +74,17 @@ import org.camunda.bpm.engine.impl.FormServiceImpl;
 import org.camunda.bpm.engine.impl.HistoryServiceImpl;
 import org.camunda.bpm.engine.impl.IdentityServiceImpl;
 import org.camunda.bpm.engine.impl.ManagementServiceImpl;
+import org.camunda.bpm.engine.impl.PriorityProvider;
 import org.camunda.bpm.engine.impl.ProcessEngineImpl;
 import org.camunda.bpm.engine.impl.RepositoryServiceImpl;
 import org.camunda.bpm.engine.impl.RuntimeServiceImpl;
 import org.camunda.bpm.engine.impl.ServiceImpl;
 import org.camunda.bpm.engine.impl.TaskServiceImpl;
 import org.camunda.bpm.engine.impl.application.ProcessApplicationManager;
+import org.camunda.bpm.engine.impl.batch.BatchJobHandler;
+import org.camunda.bpm.engine.impl.batch.BatchMonitorJobHandler;
+import org.camunda.bpm.engine.impl.batch.BatchSeedJobHandler;
+import org.camunda.bpm.engine.impl.bpmn.behavior.ExternalTaskActivityBehavior;
 import org.camunda.bpm.engine.impl.bpmn.deployer.BpmnDeployer;
 import org.camunda.bpm.engine.impl.bpmn.parser.BpmnParseListener;
 import org.camunda.bpm.engine.impl.bpmn.parser.BpmnParser;
@@ -86,8 +93,10 @@ import org.camunda.bpm.engine.impl.calendar.CycleBusinessCalendar;
 import org.camunda.bpm.engine.impl.calendar.DueDateBusinessCalendar;
 import org.camunda.bpm.engine.impl.calendar.DurationBusinessCalendar;
 import org.camunda.bpm.engine.impl.calendar.MapBusinessCalendarManager;
+import org.camunda.bpm.engine.impl.cfg.auth.AuthorizationCommandChecker;
 import org.camunda.bpm.engine.impl.cfg.auth.DefaultAuthorizationProvider;
 import org.camunda.bpm.engine.impl.cfg.auth.ResourceAuthorizationProvider;
+import org.camunda.bpm.engine.impl.cfg.multitenancy.TenantCommandChecker;
 import org.camunda.bpm.engine.impl.cfg.multitenancy.TenantIdProvider;
 import org.camunda.bpm.engine.impl.cfg.standalone.StandaloneTransactionContextFactory;
 import org.camunda.bpm.engine.impl.cmmn.CaseServiceImpl;
@@ -109,7 +118,8 @@ import org.camunda.bpm.engine.impl.delegate.DefaultDelegateInterceptor;
 import org.camunda.bpm.engine.impl.digest.PasswordEncryptor;
 import org.camunda.bpm.engine.impl.digest.ShaHashDigest;
 import org.camunda.bpm.engine.impl.dmn.configuration.DmnEngineConfigurationBuilder;
-import org.camunda.bpm.engine.impl.dmn.deployer.DmnDeployer;
+import org.camunda.bpm.engine.impl.dmn.deployer.DecisionDefinitionDeployer;
+import org.camunda.bpm.engine.impl.dmn.deployer.DecisionRequirementsDefinitionDeployer;
 import org.camunda.bpm.engine.impl.dmn.entity.repository.DecisionDefinitionManager;
 import org.camunda.bpm.engine.impl.el.CommandContextFunctionMapper;
 import org.camunda.bpm.engine.impl.el.DateTimeFunctionMapper;
@@ -118,6 +128,7 @@ import org.camunda.bpm.engine.impl.event.CompensationEventHandler;
 import org.camunda.bpm.engine.impl.event.EventHandler;
 import org.camunda.bpm.engine.impl.event.MessageEventHandler;
 import org.camunda.bpm.engine.impl.event.SignalEventHandler;
+import org.camunda.bpm.engine.impl.externaltask.DefaultExternalTaskPriorityProvider;
 import org.camunda.bpm.engine.impl.form.engine.FormEngine;
 import org.camunda.bpm.engine.impl.form.engine.HtmlFormEngine;
 import org.camunda.bpm.engine.impl.form.engine.JuelFormEngine;
@@ -163,9 +174,9 @@ import org.camunda.bpm.engine.impl.jobexecutor.DefaultFailedJobCommandFactory;
 import org.camunda.bpm.engine.impl.jobexecutor.DefaultJobExecutor;
 import org.camunda.bpm.engine.impl.jobexecutor.DefaultJobPriorityProvider;
 import org.camunda.bpm.engine.impl.jobexecutor.FailedJobCommandFactory;
+import org.camunda.bpm.engine.impl.jobexecutor.JobDeclaration;
 import org.camunda.bpm.engine.impl.jobexecutor.JobExecutor;
 import org.camunda.bpm.engine.impl.jobexecutor.JobHandler;
-import org.camunda.bpm.engine.impl.jobexecutor.JobPriorityProvider;
 import org.camunda.bpm.engine.impl.jobexecutor.NotifyAcquisitionRejectedJobsHandler;
 import org.camunda.bpm.engine.impl.jobexecutor.ProcessEventJobHandler;
 import org.camunda.bpm.engine.impl.jobexecutor.RejectedJobsHandler;
@@ -187,26 +198,38 @@ import org.camunda.bpm.engine.impl.migration.DefaultMigrationActivityMatcher;
 import org.camunda.bpm.engine.impl.migration.DefaultMigrationInstructionGenerator;
 import org.camunda.bpm.engine.impl.migration.MigrationActivityMatcher;
 import org.camunda.bpm.engine.impl.migration.MigrationInstructionGenerator;
-import org.camunda.bpm.engine.impl.migration.validation.activity.HasNoEventSubProcessChildActivityValidator;
-import org.camunda.bpm.engine.impl.migration.validation.activity.HasNoEventSubProcessParentActivityValidator;
+import org.camunda.bpm.engine.impl.migration.batch.MigrationBatchJobHandler;
 import org.camunda.bpm.engine.impl.migration.validation.activity.MigrationActivityValidator;
-import org.camunda.bpm.engine.impl.migration.validation.activity.NotMultiInstanceChildActivityValidator;
+import org.camunda.bpm.engine.impl.migration.validation.activity.NoCompensationHandlerActivityValidator;
 import org.camunda.bpm.engine.impl.migration.validation.activity.SupportedActivityValidator;
-import org.camunda.bpm.engine.impl.migration.validation.activity.SupportedBoundaryEventActivityValidator;
-import org.camunda.bpm.engine.impl.migration.validation.instance.AdditionalFlowScopeActivityInstanceValidator;
+import org.camunda.bpm.engine.impl.migration.validation.activity.SupportedPassiveEventTriggerActivityValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instance.AsyncAfterMigrationValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instance.AsyncMigrationValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instance.AsyncProcessStartMigrationValidator;
 import org.camunda.bpm.engine.impl.migration.validation.instance.MigratingActivityInstanceValidator;
-import org.camunda.bpm.engine.impl.migration.validation.instance.NoActiveTransitionsActivityInstanceValidator;
-import org.camunda.bpm.engine.impl.migration.validation.instance.NoUnmappedLeafActivityInstanceValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instance.MigratingCompensationInstanceValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instance.MigratingTransitionInstanceValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instance.NoUnmappedCompensationStartEventValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instance.NoUnmappedLeafInstanceValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instance.SupportedActivityInstanceValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instance.VariableConflictActivityInstanceValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instruction.AdditionalFlowScopeInstructionValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instruction.CannotAddMultiInstanceBodyValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instruction.CannotAddMultiInstanceInnerActivityValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instruction.CannotRemoveMultiInstanceInnerActivityValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instruction.GatewayMappingValidator;
 import org.camunda.bpm.engine.impl.migration.validation.instruction.MigrationInstructionValidator;
 import org.camunda.bpm.engine.impl.migration.validation.instruction.OnlyOnceMappedActivityInstructionValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instruction.SameBehaviorInstructionValidator;
 import org.camunda.bpm.engine.impl.migration.validation.instruction.SameEventScopeInstructionValidator;
-import org.camunda.bpm.engine.impl.migration.validation.instruction.SameTypeInstructionValidator;
-import org.camunda.bpm.engine.impl.migration.validation.instruction.SupportedActivitiesInstructionValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instruction.SameEventTypeValidator;
+import org.camunda.bpm.engine.impl.migration.validation.instruction.UpdateEventTriggersValidator;
 import org.camunda.bpm.engine.impl.persistence.GenericManagerFactory;
 import org.camunda.bpm.engine.impl.persistence.deploy.Deployer;
 import org.camunda.bpm.engine.impl.persistence.deploy.DeploymentCache;
 import org.camunda.bpm.engine.impl.persistence.entity.AttachmentManager;
 import org.camunda.bpm.engine.impl.persistence.entity.AuthorizationManager;
+import org.camunda.bpm.engine.impl.persistence.entity.BatchManager;
 import org.camunda.bpm.engine.impl.persistence.entity.ByteArrayManager;
 import org.camunda.bpm.engine.impl.persistence.entity.CommentManager;
 import org.camunda.bpm.engine.impl.persistence.entity.DeploymentManager;
@@ -215,9 +238,11 @@ import org.camunda.bpm.engine.impl.persistence.entity.ExecutionManager;
 import org.camunda.bpm.engine.impl.persistence.entity.ExternalTaskManager;
 import org.camunda.bpm.engine.impl.persistence.entity.FilterManager;
 import org.camunda.bpm.engine.impl.persistence.entity.HistoricActivityInstanceManager;
+import org.camunda.bpm.engine.impl.persistence.entity.HistoricBatchManager;
 import org.camunda.bpm.engine.impl.persistence.entity.HistoricCaseActivityInstanceManager;
 import org.camunda.bpm.engine.impl.persistence.entity.HistoricCaseInstanceManager;
 import org.camunda.bpm.engine.impl.persistence.entity.HistoricDetailManager;
+import org.camunda.bpm.engine.impl.persistence.entity.HistoricIdentityLinkLogManager;
 import org.camunda.bpm.engine.impl.persistence.entity.HistoricIncidentManager;
 import org.camunda.bpm.engine.impl.persistence.entity.HistoricJobLogManager;
 import org.camunda.bpm.engine.impl.persistence.entity.HistoricProcessInstanceManager;
@@ -237,6 +262,8 @@ import org.camunda.bpm.engine.impl.persistence.entity.ResourceManager;
 import org.camunda.bpm.engine.impl.persistence.entity.StatisticsManager;
 import org.camunda.bpm.engine.impl.persistence.entity.TableDataManager;
 import org.camunda.bpm.engine.impl.persistence.entity.TaskManager;
+import org.camunda.bpm.engine.impl.persistence.entity.TaskReportManager;
+import org.camunda.bpm.engine.impl.persistence.entity.TenantManager;
 import org.camunda.bpm.engine.impl.persistence.entity.UserOperationLogManager;
 import org.camunda.bpm.engine.impl.persistence.entity.VariableInstanceManager;
 import org.camunda.bpm.engine.impl.runtime.CorrelationHandler;
@@ -296,6 +323,8 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
 
   public static final String DEFAULT_MYBATIS_MAPPING_FILE = "org/camunda/bpm/engine/impl/mapping/mappings.xml";
 
+  public static SqlSessionFactory cachedSqlSessionFactory;
+
   // SERVICES /////////////////////////////////////////////////////////////////
 
   protected RepositoryService repositoryService = new RepositoryServiceImpl();
@@ -354,7 +383,10 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
   protected Map<String, JobHandler> jobHandlers;
   protected JobExecutor jobExecutor;
 
-  protected JobPriorityProvider jobPriorityProvider;
+  protected PriorityProvider<JobDeclaration<?, ?>> jobPriorityProvider;
+
+  // EXTERNAL TASK /////////////////////////////////////////////////////////////
+  protected PriorityProvider<ExternalTaskActivityBehavior> externalTaskPriorityProvider;
 
   // MYBATIS SQL SESSION FACTORY //////////////////////////////////////////////
 
@@ -372,6 +404,19 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
   protected Map<String, IncidentHandler> incidentHandlers;
   protected List<IncidentHandler> customIncidentHandlers;
 
+  // BATCH ////////////////////////////////////////////////////////////////////
+
+  protected Map<String, BatchJobHandler<?>> batchHandlers;
+  protected List<BatchJobHandler<?>> customBatchJobHandlers;
+
+  /** Number of jobs created by a batch seed job invocation */
+  protected int batchJobsPerSeed = 100;
+  /** Number of invocations executed by a single batch job */
+  protected int invocationsPerBatchJob = 1;
+  /** seconds to wait between polling for batch completion */
+  protected int batchPollTime = 30;
+  /** default priority for batch jobs */
+  protected long batchJobPriority = DefaultJobPriorityProvider.DEFAULT_PRIORITY;
 
   // OTHER ////////////////////////////////////////////////////////////////////
   protected List<FormEngine> customFormEngines;
@@ -538,6 +583,8 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
 
   protected TenantIdProvider tenantIdProvider = null;
 
+  protected List<CommandChecker> commandCheckers = null;
+
   // Migration
   protected MigrationActivityMatcher migrationActivityMatcher;
 
@@ -552,7 +599,13 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
   protected List<MigratingActivityInstanceValidator> customPreMigratingActivityInstanceValidators;
   protected List<MigratingActivityInstanceValidator> customPostMigratingActivityInstanceValidators;
   protected List<MigratingActivityInstanceValidator> migratingActivityInstanceValidators;
+  protected List<MigratingTransitionInstanceValidator> migratingTransitionInstanceValidators;
+  protected List<MigratingCompensationInstanceValidator> migratingCompensationInstanceValidators;
 
+  // Default user permission for task
+  protected Permission defaultUserPermissionForTask;
+
+  protected boolean isUseSharedSqlSessionFactory = false;
 
   // buildProcessEngine ///////////////////////////////////////////////////////
 
@@ -590,6 +643,8 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     initIdGenerator();
     initDeployers();
     initJobProvider();
+    initExternalTaskPriorityProvider();
+    initBatchHandlers();
     initJobExecutor();
     initDataSource();
     initTransactionFactory();
@@ -609,11 +664,9 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     initDeploymentRegistration();
     initResourceAuthorizationProvider();
     initMetrics();
-    initMigrationActivityComparator();
-    initMigrationInstructionGenerator();
-    initMigrationInstructionValidators();
-    initMigratingActivityInstanceValidators();
-
+    initMigration();
+    initCommandCheckers();
+    initDefaultUserPermissionForTask();
     invokePostInit();
   }
 
@@ -660,6 +713,23 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     if(customIncidentHandlers != null) {
       for (IncidentHandler incidentHandler : customIncidentHandlers) {
         incidentHandlers.put(incidentHandler.getIncidentHandlerType(), incidentHandler);
+      }
+    }
+  }
+
+  // batch ///////////////////////////////////////////////////////////////////////
+
+  protected void initBatchHandlers() {
+    if (batchHandlers == null) {
+      batchHandlers = new HashMap<String, BatchJobHandler<?>>();
+
+      MigrationBatchJobHandler migrationHandler = new MigrationBatchJobHandler();
+      batchHandlers.put(migrationHandler.getType(), migrationHandler);
+    }
+
+    if (customBatchJobHandlers != null) {
+      for (BatchJobHandler<?> customBatchJobHandler : customBatchJobHandlers) {
+        batchHandlers.put(customBatchJobHandler.getType(), customBatchJobHandler);
       }
     }
   }
@@ -819,11 +889,14 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
   }
 
   protected static Properties databaseTypeMappings = getDefaultDatabaseTypeMappings();
+  protected static final String MY_SQL_PRODUCT_NAME = "MySQL";
+  protected static final String MARIA_DB_PRODUCT_NAME = "MariaDB";
 
   protected static Properties getDefaultDatabaseTypeMappings() {
     Properties databaseTypeMappings = new Properties();
     databaseTypeMappings.setProperty("H2","h2");
-    databaseTypeMappings.setProperty("MySQL","mysql");
+    databaseTypeMappings.setProperty(MY_SQL_PRODUCT_NAME,"mysql");
+    databaseTypeMappings.setProperty(MARIA_DB_PRODUCT_NAME,"mariadb");
     databaseTypeMappings.setProperty("Oracle","oracle");
     databaseTypeMappings.setProperty("PostgreSQL","postgres");
     databaseTypeMappings.setProperty("Microsoft SQL Server","mssql");
@@ -846,8 +919,6 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     databaseTypeMappings.setProperty("DB2/SUN64","db2");
     databaseTypeMappings.setProperty("DB2/PTX","db2");
     databaseTypeMappings.setProperty("DB2/2","db2");
-    // note that the database product name of mariaDB is 'MySQL'
-    // so the databaseType have to set to 'mariadb' explicit in configuration
     return databaseTypeMappings;
   }
 
@@ -857,6 +928,9 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
       connection = dataSource.getConnection();
       DatabaseMetaData databaseMetaData = connection.getMetaData();
       String databaseProductName = databaseMetaData.getDatabaseProductName();
+      if (MY_SQL_PRODUCT_NAME.equals(databaseProductName)) {
+        databaseProductName = checkForMariaDb(databaseMetaData, databaseProductName);
+      }
       LOG.debugDatabaseproductName(databaseProductName);
       databaseType = databaseTypeMappings.getProperty(databaseProductName);
       ensureNotNull("couldn't deduct database type from database product name '" + databaseProductName + "'", "databaseType", databaseType);
@@ -875,6 +949,34 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     }
   }
 
+  /**
+   * The product name of mariadb is still 'MySQL'. This method
+   * tries if it can find some evidence for mariadb. If it is successful
+   * it will return "MariaDB", otherwise the provided database name.
+   */
+  protected String checkForMariaDb(DatabaseMetaData databaseMetaData, String databaseName) {
+    try {
+      String databaseProductVersion = databaseMetaData.getDatabaseProductVersion();
+      if (databaseProductVersion != null && databaseProductVersion.toLowerCase().contains("mariadb")) {
+        return MARIA_DB_PRODUCT_NAME;
+      }
+    } catch (SQLException ignore) { }
+
+    try {
+      String driverName = databaseMetaData.getDriverName();
+      if (driverName != null && driverName.toLowerCase().contains("mariadb")) {
+        return MARIA_DB_PRODUCT_NAME;
+      }
+    } catch (SQLException ignore) { }
+
+    String metaDataClassName = databaseMetaData.getClass().getName();
+    if (metaDataClassName != null && metaDataClassName.toLowerCase().contains("mariadb")) {
+      return MARIA_DB_PRODUCT_NAME;
+    }
+
+    return databaseName;
+  }
+
   // myBatis SqlSessionFactory ////////////////////////////////////////////////
 
   protected void initTransactionFactory() {
@@ -888,6 +990,10 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
   }
 
   protected void initSqlSessionFactory() {
+    if(isUseSharedSqlSessionFactory) {
+      sqlSessionFactory = cachedSqlSessionFactory;
+    }
+
     if (sqlSessionFactory==null) {
       InputStream inputStream = null;
       try {
@@ -896,37 +1002,18 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
         // update the jdbc parameters to the configured ones...
         Environment environment = new Environment("default", transactionFactory, dataSource);
         Reader reader = new InputStreamReader(inputStream);
+
         Properties properties = new Properties();
-        properties.put("prefix", databaseTablePrefix);
-        if(databaseType != null) {
-          properties.put("limitBefore" , DbSqlSessionFactory.databaseSpecificLimitBeforeStatements.get(databaseType));
-          properties.put("limitAfter" , DbSqlSessionFactory.databaseSpecificLimitAfterStatements.get(databaseType));
-          properties.put("innerLimitAfter" , DbSqlSessionFactory.databaseSpecificInnerLimitAfterStatements.get(databaseType));
-          properties.put("limitBetween" , DbSqlSessionFactory.databaseSpecificLimitBetweenStatements.get(databaseType));
-          properties.put("limitBetweenClob" , DbSqlSessionFactory.databaseSpecificLimitBetweenClobStatements.get(databaseType));
-          properties.put("orderBy" , DbSqlSessionFactory.databaseSpecificOrderByStatements.get(databaseType));
-          properties.put("limitBeforeNativeQuery" , DbSqlSessionFactory.databaseSpecificLimitBeforeNativeQueryStatements.get(databaseType));
 
-          properties.put("bitand1" , DbSqlSessionFactory.databaseSpecificBitAnd1.get(databaseType));
-          properties.put("bitand2" , DbSqlSessionFactory.databaseSpecificBitAnd2.get(databaseType));
-          properties.put("bitand3" , DbSqlSessionFactory.databaseSpecificBitAnd3.get(databaseType));
-
-          properties.put("datepart1" , DbSqlSessionFactory.databaseSpecificDatepart1.get(databaseType));
-          properties.put("datepart2" , DbSqlSessionFactory.databaseSpecificDatepart2.get(databaseType));
-          properties.put("datepart3" , DbSqlSessionFactory.databaseSpecificDatepart3.get(databaseType));
-
-          properties.put("trueConstant", DbSqlSessionFactory.databaseSpecificTrueConstant.get(databaseType));
-          properties.put("falseConstant", DbSqlSessionFactory.databaseSpecificFalseConstant.get(databaseType));
-
-          properties.put("dbSpecificDummyTable" , DbSqlSessionFactory.databaseSpecificDummyTable.get(databaseType));
-          properties.put("dbSpecificIfNullFunction", DbSqlSessionFactory.databaseSpecificIfNull.get(databaseType));
-
-          Map<String, String> constants = DbSqlSessionFactory.dbSpecificConstants.get(databaseType);
-          for (Entry<String, String> entry : constants.entrySet()) {
-            properties.put(entry.getKey(), entry.getValue());
-          }
-
+        if(isUseSharedSqlSessionFactory) {
+          properties.put("prefix", "${@org.camunda.bpm.engine.impl.context.Context@getProcessEngineConfiguration().databaseTablePrefix}");
         }
+        else {
+          properties.put("prefix", databaseTablePrefix);
+        }
+
+        initSqlSessionFactoryProperties(properties, databaseTablePrefix, databaseType);
+
         XMLConfigBuilder parser = new XMLConfigBuilder(reader,"", properties);
         Configuration configuration = parser.getConfiguration();
         configuration.setEnvironment(environment);
@@ -936,10 +1023,48 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
 
         sqlSessionFactory = new DefaultSqlSessionFactory(configuration);
 
+        if(isUseSharedSqlSessionFactory) {
+          cachedSqlSessionFactory = sqlSessionFactory;
+        }
+
+
       } catch (Exception e) {
         throw new ProcessEngineException("Error while building ibatis SqlSessionFactory: " + e.getMessage(), e);
       } finally {
         IoUtil.closeSilently(inputStream);
+      }
+    }
+  }
+
+  public static void initSqlSessionFactoryProperties(Properties properties, String databaseTablePrefix, String databaseType) {
+
+    if(databaseType != null) {
+      properties.put("limitBefore" , DbSqlSessionFactory.databaseSpecificLimitBeforeStatements.get(databaseType));
+      properties.put("limitAfter" , DbSqlSessionFactory.databaseSpecificLimitAfterStatements.get(databaseType));
+      properties.put("innerLimitAfter" , DbSqlSessionFactory.databaseSpecificInnerLimitAfterStatements.get(databaseType));
+      properties.put("limitBetween" , DbSqlSessionFactory.databaseSpecificLimitBetweenStatements.get(databaseType));
+      properties.put("limitBetweenFilter" , DbSqlSessionFactory.databaseSpecificLimitBetweenFilterStatements.get(databaseType));
+      properties.put("orderBy" , DbSqlSessionFactory.databaseSpecificOrderByStatements.get(databaseType));
+      properties.put("limitBeforeNativeQuery" , DbSqlSessionFactory.databaseSpecificLimitBeforeNativeQueryStatements.get(databaseType));
+      properties.put("distinct" , DbSqlSessionFactory.databaseSpecificDistinct.get(databaseType));
+
+      properties.put("bitand1" , DbSqlSessionFactory.databaseSpecificBitAnd1.get(databaseType));
+      properties.put("bitand2" , DbSqlSessionFactory.databaseSpecificBitAnd2.get(databaseType));
+      properties.put("bitand3" , DbSqlSessionFactory.databaseSpecificBitAnd3.get(databaseType));
+
+      properties.put("datepart1" , DbSqlSessionFactory.databaseSpecificDatepart1.get(databaseType));
+      properties.put("datepart2" , DbSqlSessionFactory.databaseSpecificDatepart2.get(databaseType));
+      properties.put("datepart3" , DbSqlSessionFactory.databaseSpecificDatepart3.get(databaseType));
+
+      properties.put("trueConstant", DbSqlSessionFactory.databaseSpecificTrueConstant.get(databaseType));
+      properties.put("falseConstant", DbSqlSessionFactory.databaseSpecificFalseConstant.get(databaseType));
+
+      properties.put("dbSpecificDummyTable" , DbSqlSessionFactory.databaseSpecificDummyTable.get(databaseType));
+      properties.put("dbSpecificIfNullFunction", DbSqlSessionFactory.databaseSpecificIfNull.get(databaseType));
+
+      Map<String, String> constants = DbSqlSessionFactory.dbSpecificConstants.get(databaseType);
+      for (Entry<String, String> entry : constants.entrySet()) {
+        properties.put(entry.getKey(), entry.getValue());
       }
     }
   }
@@ -978,6 +1103,7 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
       addSessionFactory(new GenericManagerFactory(HistoricTaskInstanceManager.class));
       addSessionFactory(new GenericManagerFactory(HistoricVariableInstanceManager.class));
       addSessionFactory(new GenericManagerFactory(HistoricIncidentManager.class));
+      addSessionFactory(new GenericManagerFactory(HistoricIdentityLinkLogManager.class));
       addSessionFactory(new GenericManagerFactory(HistoricJobLogManager.class));
       addSessionFactory(new GenericManagerFactory(IdentityInfoManager.class));
       addSessionFactory(new GenericManagerFactory(IdentityLinkManager.class));
@@ -989,6 +1115,7 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
       addSessionFactory(new GenericManagerFactory(ByteArrayManager.class));
       addSessionFactory(new GenericManagerFactory(TableDataManager.class));
       addSessionFactory(new GenericManagerFactory(TaskManager.class));
+      addSessionFactory(new GenericManagerFactory(TaskReportManager.class));
       addSessionFactory(new GenericManagerFactory(VariableInstanceManager.class));
       addSessionFactory(new GenericManagerFactory(EventSubscriptionManager.class));
       addSessionFactory(new GenericManagerFactory(StatisticsManager.class));
@@ -998,6 +1125,9 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
       addSessionFactory(new GenericManagerFactory(MeterLogManager.class));
       addSessionFactory(new GenericManagerFactory(ExternalTaskManager.class));
       addSessionFactory(new GenericManagerFactory(ReportManager.class));
+      addSessionFactory(new GenericManagerFactory(BatchManager.class));
+      addSessionFactory(new GenericManagerFactory(HistoricBatchManager.class));
+      addSessionFactory(new GenericManagerFactory(TenantManager.class));
 
       addSessionFactory(new GenericManagerFactory(CaseDefinitionManager.class));
       addSessionFactory(new GenericManagerFactory(CaseExecutionManager.class));
@@ -1038,7 +1168,16 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     addSessionFactory(new DbSqlPersistenceProviderFactory());
   }
 
-  protected void initMigrationActivityComparator() {
+  protected void initMigration() {
+    initMigrationInstructionValidators();
+    initMigrationActivityMatcher();
+    initMigrationInstructionGenerator();
+    initMigratingActivityInstanceValidators();
+    initMigratingTransitionInstanceValidators();
+    initMigratingCompensationInstanceValidators();
+  }
+
+  protected void initMigrationActivityMatcher() {
     if (migrationActivityMatcher == null) {
       migrationActivityMatcher = new DefaultMigrationActivityMatcher();
     }
@@ -1057,7 +1196,9 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     if (customPostMigrationActivityValidators != null) {
       migrationActivityValidators.addAll(customPostMigrationActivityValidators);
     }
-    migrationInstructionGenerator.migrationActivityValidators(migrationActivityValidators);
+    migrationInstructionGenerator = migrationInstructionGenerator
+        .migrationActivityValidators(migrationActivityValidators)
+        .migrationInstructionValidators(migrationInstructionValidators);
   }
 
   protected void initMigrationInstructionValidators() {
@@ -1084,6 +1225,22 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
         migratingActivityInstanceValidators.addAll(customPostMigratingActivityInstanceValidators);
       }
 
+    }
+  }
+
+  protected void initMigratingTransitionInstanceValidators() {
+    if (migratingTransitionInstanceValidators == null) {
+      migratingTransitionInstanceValidators = new ArrayList<MigratingTransitionInstanceValidator>();
+      migratingTransitionInstanceValidators.addAll(getDefaultMigratingTransitionInstanceValidators());
+    }
+  }
+
+  protected void initMigratingCompensationInstanceValidators() {
+    if (migratingCompensationInstanceValidators == null) {
+      migratingCompensationInstanceValidators = new ArrayList<MigratingCompensationInstanceValidator>();
+
+      migratingCompensationInstanceValidators.add(new NoUnmappedLeafInstanceValidator());
+      migratingCompensationInstanceValidators.add(new NoUnmappedCompensationStartEventValidator());
     }
   }
 
@@ -1143,8 +1300,11 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     }
 
     if (isDmnEnabled()) {
-      DmnDeployer dmnDeployer = getDmnDeployer();
-      defaultDeployers.add(dmnDeployer);
+      DecisionRequirementsDefinitionDeployer decisionRequirementsDefinitionDeployer = getDecisionRequirementsDefinitionDeployer();
+      DecisionDefinitionDeployer decisionDefinitionDeployer = getDecisionDefinitionDeployer();
+      // the DecisionRequirementsDefinition deployer must be before the DecisionDefinitionDeployer
+      defaultDeployers.add(decisionRequirementsDefinitionDeployer);
+      defaultDeployers.add(decisionDefinitionDeployer);
     }
 
     return defaultDeployers;
@@ -1224,11 +1384,18 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     return defaultListener;
   }
 
-  protected DmnDeployer getDmnDeployer() {
-    DmnDeployer dmnDeployer = new DmnDeployer();
-    dmnDeployer.setIdGenerator(idGenerator);
-    dmnDeployer.setTransformer(dmnEngineConfiguration.getTransformer());
-    return dmnDeployer;
+  protected DecisionDefinitionDeployer getDecisionDefinitionDeployer() {
+    DecisionDefinitionDeployer decisionDefinitionDeployer = new DecisionDefinitionDeployer();
+    decisionDefinitionDeployer.setIdGenerator(idGenerator);
+    decisionDefinitionDeployer.setTransformer(dmnEngineConfiguration.getTransformer());
+    return decisionDefinitionDeployer;
+  }
+
+  protected DecisionRequirementsDefinitionDeployer getDecisionRequirementsDefinitionDeployer() {
+    DecisionRequirementsDefinitionDeployer drdDeployer = new DecisionRequirementsDefinitionDeployer();
+    drdDeployer.setIdGenerator(idGenerator);
+    drdDeployer.setTransformer(dmnEngineConfiguration.getTransformer());
+    return drdDeployer;
   }
 
   public DmnEngine getDmnEngine() {
@@ -1285,6 +1452,16 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     TimerActivateJobDefinitionHandler activateJobDefinitionHandler = new TimerActivateJobDefinitionHandler();
     jobHandlers.put(activateJobDefinitionHandler.getType(), activateJobDefinitionHandler);
 
+    BatchSeedJobHandler batchSeedJobHandler = new BatchSeedJobHandler();
+    jobHandlers.put(batchSeedJobHandler.getType(), batchSeedJobHandler);
+
+    BatchMonitorJobHandler batchMonitorJobHandler = new BatchMonitorJobHandler();
+    jobHandlers.put(batchMonitorJobHandler.getType(), batchMonitorJobHandler);
+
+    for (JobHandler batchHandler : batchHandlers.values()) {
+      jobHandlers.put(batchHandler.getType(), batchHandler);
+    }
+
     // if we have custom job handlers, register them
     if (getCustomJobHandlers()!=null) {
       for (JobHandler customJobHandler : getCustomJobHandlers()) {
@@ -1310,39 +1487,47 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     }
   }
 
+  //external task /////////////////////////////////////////////////////////////
+
+  protected void initExternalTaskPriorityProvider() {
+    if (producePrioritizedExternalTasks && externalTaskPriorityProvider == null) {
+      externalTaskPriorityProvider = new DefaultExternalTaskPriorityProvider();
+    }
+  }
+
   // history //////////////////////////////////////////////////////////////////
 
   public void initHistoryLevel() {
-    if(historyLevel == null) {
-      if(historyLevels == null) {
-        historyLevels = new ArrayList<HistoryLevel>();
-        historyLevels.add(HistoryLevel.HISTORY_LEVEL_NONE);
-        historyLevels.add(HistoryLevel.HISTORY_LEVEL_ACTIVITY);
-        historyLevels.add(HistoryLevel.HISTORY_LEVEL_AUDIT);
-        historyLevels.add(HistoryLevel.HISTORY_LEVEL_FULL);
-      }
+    if (historyLevel != null) {
+      setHistory(historyLevel.getName());
+    }
 
-      if(customHistoryLevels != null) {
-        historyLevels.addAll(customHistoryLevels);
-      }
+    if(historyLevels == null) {
+      historyLevels = new ArrayList<HistoryLevel>();
+      historyLevels.add(HistoryLevel.HISTORY_LEVEL_NONE);
+      historyLevels.add(HistoryLevel.HISTORY_LEVEL_ACTIVITY);
+      historyLevels.add(HistoryLevel.HISTORY_LEVEL_AUDIT);
+      historyLevels.add(HistoryLevel.HISTORY_LEVEL_FULL);
+    }
 
-      if(HISTORY_VARIABLE.equalsIgnoreCase(history)) {
-        historyLevel = HistoryLevel.HISTORY_LEVEL_ACTIVITY;
-        LOG.usingDeprecatedHistoryLevelVariable();
+    if(customHistoryLevels != null) {
+      historyLevels.addAll(customHistoryLevels);
+    }
 
-      } else {
-        for (HistoryLevel historyLevel : historyLevels) {
-          if(historyLevel.getName().equalsIgnoreCase(history)) {
-            this.historyLevel = historyLevel;
-          }
+    if(HISTORY_VARIABLE.equalsIgnoreCase(history)) {
+      historyLevel = HistoryLevel.HISTORY_LEVEL_ACTIVITY;
+      LOG.usingDeprecatedHistoryLevelVariable();
+    } else {
+      for (HistoryLevel historyLevel : historyLevels) {
+        if(historyLevel.getName().equalsIgnoreCase(history)) {
+          this.historyLevel = historyLevel;
         }
       }
+    }
 
-
-      // do allow null for history level in case of "auto"
-      if(historyLevel == null && !ProcessEngineConfiguration.HISTORY_AUTO.equalsIgnoreCase(history)) {
-        throw new ProcessEngineException("invalid history level: "+history);
-      }
+    // do allow null for history level in case of "auto"
+    if(historyLevel == null && !ProcessEngineConfiguration.HISTORY_AUTO.equalsIgnoreCase(history)) {
+      throw new ProcessEngineException("invalid history level: "+history);
     }
   }
 
@@ -1611,6 +1796,16 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     }
   }
 
+  protected void initCommandCheckers() {
+    if (commandCheckers == null) {
+      commandCheckers = new ArrayList<CommandChecker>();
+
+      // add the default command checkers
+      commandCheckers.add(new TenantCommandChecker());
+      commandCheckers.add(new AuthorizationCommandChecker());
+    }
+  }
+
   // JPA //////////////////////////////////////////////////////////////////////
 
   protected void initJpa() {
@@ -1705,6 +1900,20 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
   protected void initResourceAuthorizationProvider() {
     if(resourceAuthorizationProvider == null) {
       resourceAuthorizationProvider = new DefaultAuthorizationProvider();
+    }
+  }
+
+  protected void initDefaultUserPermissionForTask() {
+    if(defaultUserPermissionForTask == null) {
+      if(Permissions.UPDATE.getName().equals(defaultUserPermissionNameForTask)) {
+        defaultUserPermissionForTask = Permissions.UPDATE;
+      }
+      else if(Permissions.TASK_WORK.getName().equals(defaultUserPermissionNameForTask)) {
+        defaultUserPermissionForTask = Permissions.TASK_WORK;
+      }
+      else {
+        throw LOG.invalidConfigDefaultUserPermissionNameForTask(defaultUserPermissionNameForTask, new String[] { Permissions.UPDATE.getName(), Permissions.TASK_WORK.getName()});
+      }
     }
   }
 
@@ -1939,12 +2148,20 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     return this;
   }
 
-  public JobPriorityProvider getJobPriorityProvider() {
+  public PriorityProvider<JobDeclaration<?, ?>> getJobPriorityProvider() {
     return jobPriorityProvider;
   }
 
-  public void setJobPriorityProvider(JobPriorityProvider jobPriorityProvider) {
+  public void setJobPriorityProvider(PriorityProvider<JobDeclaration<?, ?>> jobPriorityProvider) {
     this.jobPriorityProvider = jobPriorityProvider;
+  }
+
+  public PriorityProvider<ExternalTaskActivityBehavior> getExternalTaskPriorityProvider() {
+    return externalTaskPriorityProvider;
+  }
+
+  public void setExternalTaskPriorityProvider(PriorityProvider<ExternalTaskActivityBehavior> externalTaskPriorityProvider) {
+    this.externalTaskPriorityProvider = externalTaskPriorityProvider;
   }
 
   public IdGenerator getIdGenerator() {
@@ -2067,6 +2284,14 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     return this;
   }
 
+  public Permission getDefaultUserPermissionForTask() {
+    return defaultUserPermissionForTask;
+  }
+
+  public ProcessEngineConfigurationImpl setDefaultUserPermissionForTask(Permission defaultUserPermissionForTask) {
+    this.defaultUserPermissionForTask = defaultUserPermissionForTask;
+    return this;
+  }
 
   public Map<String, JobHandler> getJobHandlers() {
     return jobHandlers;
@@ -2594,6 +2819,54 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     this.customIncidentHandlers = customIncidentHandlers;
   }
 
+  public Map<String, BatchJobHandler<?>> getBatchHandlers() {
+    return batchHandlers;
+  }
+
+  public void setBatchHandlers(Map<String, BatchJobHandler<?>> batchHandlers) {
+    this.batchHandlers = batchHandlers;
+  }
+
+  public List<BatchJobHandler<?>> getCustomBatchJobHandlers() {
+    return customBatchJobHandlers;
+  }
+
+  public void setCustomBatchJobHandlers(List<BatchJobHandler<?>> customBatchJobHandlers) {
+    this.customBatchJobHandlers = customBatchJobHandlers;
+  }
+
+  public int getBatchJobsPerSeed() {
+    return batchJobsPerSeed;
+  }
+
+  public void setBatchJobsPerSeed(int batchJobsPerSeed) {
+    this.batchJobsPerSeed = batchJobsPerSeed;
+  }
+
+  public int getInvocationsPerBatchJob() {
+    return invocationsPerBatchJob;
+  }
+
+  public void setInvocationsPerBatchJob(int invocationsPerBatchJob) {
+    this.invocationsPerBatchJob = invocationsPerBatchJob;
+  }
+
+  public int getBatchPollTime() {
+    return batchPollTime;
+  }
+
+  public void setBatchPollTime(int batchPollTime) {
+    this.batchPollTime = batchPollTime;
+  }
+
+  public long getBatchJobPriority() {
+    return batchJobPriority;
+  }
+
+  public void setBatchJobPriority(long batchJobPriority) {
+    this.batchJobPriority = batchJobPriority;
+  }
+
   public SessionFactory getIdentityProviderSessionFactory() {
     return identityProviderSessionFactory;
   }
@@ -3016,10 +3289,8 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
   public List<MigrationActivityValidator> getDefaultMigrationActivityValidators() {
     List<MigrationActivityValidator> migrationActivityValidators = new ArrayList<MigrationActivityValidator>();
     migrationActivityValidators.add(SupportedActivityValidator.INSTANCE);
-    migrationActivityValidators.add(SupportedBoundaryEventActivityValidator.INSTANCE);
-    migrationActivityValidators.add(NotMultiInstanceChildActivityValidator.INSTANCE);
-    migrationActivityValidators.add(HasNoEventSubProcessParentActivityValidator.INSTANCE);
-    migrationActivityValidators.add(HasNoEventSubProcessChildActivityValidator.INSTANCE);
+    migrationActivityValidators.add(SupportedPassiveEventTriggerActivityValidator.INSTANCE);
+    migrationActivityValidators.add(NoCompensationHandlerActivityValidator.INSTANCE);
     return migrationActivityValidators;
   }
 
@@ -3058,10 +3329,16 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
 
   public List<MigrationInstructionValidator> getDefaultMigrationInstructionValidators() {
     List<MigrationInstructionValidator> migrationInstructionValidators  = new ArrayList<MigrationInstructionValidator>();
-    migrationInstructionValidators.add(new SupportedActivitiesInstructionValidator());
-    migrationInstructionValidators.add(new SameTypeInstructionValidator());
-    migrationInstructionValidators.add(new SameEventScopeInstructionValidator());
+    migrationInstructionValidators.add(new SameBehaviorInstructionValidator());
+    migrationInstructionValidators.add(new SameEventTypeValidator());
     migrationInstructionValidators.add(new OnlyOnceMappedActivityInstructionValidator());
+    migrationInstructionValidators.add(new CannotAddMultiInstanceBodyValidator());
+    migrationInstructionValidators.add(new CannotAddMultiInstanceInnerActivityValidator());
+    migrationInstructionValidators.add(new CannotRemoveMultiInstanceInnerActivityValidator());
+    migrationInstructionValidators.add(new GatewayMappingValidator());
+    migrationInstructionValidators.add(new SameEventScopeInstructionValidator());
+    migrationInstructionValidators.add(new UpdateEventTriggersValidator());
+    migrationInstructionValidators.add(new AdditionalFlowScopeInstructionValidator());
     return migrationInstructionValidators;
   }
 
@@ -3089,14 +3366,50 @@ public abstract class ProcessEngineConfigurationImpl extends ProcessEngineConfig
     return customPreMigratingActivityInstanceValidators;
   }
 
+  public List<MigratingTransitionInstanceValidator> getMigratingTransitionInstanceValidators() {
+    return migratingTransitionInstanceValidators;
+  }
+
+  public List<MigratingCompensationInstanceValidator> getMigratingCompensationInstanceValidators() {
+    return migratingCompensationInstanceValidators;
+  }
+
   public List<MigratingActivityInstanceValidator> getDefaultMigratingActivityInstanceValidators() {
     List<MigratingActivityInstanceValidator> migratingActivityInstanceValidators = new ArrayList<MigratingActivityInstanceValidator>();
 
-    migratingActivityInstanceValidators.add(new AdditionalFlowScopeActivityInstanceValidator());
-    migratingActivityInstanceValidators.add(new NoUnmappedLeafActivityInstanceValidator());
-    migratingActivityInstanceValidators.add(new NoActiveTransitionsActivityInstanceValidator());
+    migratingActivityInstanceValidators.add(new NoUnmappedLeafInstanceValidator());
+    migratingActivityInstanceValidators.add(new VariableConflictActivityInstanceValidator());
+    migratingActivityInstanceValidators.add(new SupportedActivityInstanceValidator());
 
     return migratingActivityInstanceValidators;
+  }
+
+  public List<MigratingTransitionInstanceValidator> getDefaultMigratingTransitionInstanceValidators() {
+    List<MigratingTransitionInstanceValidator> migratingTransitionInstanceValidators = new ArrayList<MigratingTransitionInstanceValidator>();
+
+    migratingTransitionInstanceValidators.add(new NoUnmappedLeafInstanceValidator());
+    migratingTransitionInstanceValidators.add(new AsyncAfterMigrationValidator());
+    migratingTransitionInstanceValidators.add(new AsyncProcessStartMigrationValidator());
+    migratingTransitionInstanceValidators.add(new AsyncMigrationValidator());
+
+    return migratingTransitionInstanceValidators;
+  }
+
+  public List<CommandChecker> getCommandCheckers() {
+    return commandCheckers;
+  }
+
+  public void setCommandCheckers(List<CommandChecker> commandCheckers) {
+    this.commandCheckers = commandCheckers;
+  }
+
+  public ProcessEngineConfigurationImpl setUseSharedSqlSessionFactory(boolean isUseSharedSqlSessionFactory) {
+    this.isUseSharedSqlSessionFactory = isUseSharedSqlSessionFactory;
+    return this;
+  }
+
+  public boolean isUseSharedSqlSessionFactory() {
+    return isUseSharedSqlSessionFactory;
   }
 
 }

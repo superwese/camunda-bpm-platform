@@ -20,6 +20,7 @@ import java.util.Date;
 import java.util.List;
 
 import org.camunda.bpm.engine.AuthorizationException;
+import org.camunda.bpm.engine.ProcessEngineConfiguration;
 import org.camunda.bpm.engine.history.HistoricJobLog;
 import org.camunda.bpm.engine.history.HistoricJobLogQuery;
 import org.camunda.bpm.engine.history.HistoricProcessInstance;
@@ -29,12 +30,14 @@ import org.camunda.bpm.engine.impl.interceptor.CommandContext;
 import org.camunda.bpm.engine.impl.interceptor.CommandExecutor;
 import org.camunda.bpm.engine.impl.jobexecutor.TimerSuspendProcessDefinitionHandler;
 import org.camunda.bpm.engine.task.Task;
+import org.camunda.bpm.engine.test.RequiredHistoryLevel;
 import org.camunda.bpm.engine.test.api.authorization.AuthorizationTest;
 
 /**
  * @author Roman Smirnov
  *
  */
+@RequiredHistoryLevel(ProcessEngineConfiguration.HISTORY_FULL)
 public class HistoricJobLogAuthorizationTest extends AuthorizationTest {
 
   protected static final String TIMER_START_PROCESS_KEY = "timerStartProcess";
@@ -43,6 +46,7 @@ public class HistoricJobLogAuthorizationTest extends AuthorizationTest {
 
   protected String deploymentId;
 
+  @Override
   public void setUp() throws Exception {
     deploymentId = createDeployment(null,
         "org/camunda/bpm/engine/test/api/authorization/timerStartEventProcess.bpmn20.xml",
@@ -51,6 +55,7 @@ public class HistoricJobLogAuthorizationTest extends AuthorizationTest {
     super.setUp();
   }
 
+  @Override
   public void tearDown() {
     super.tearDown();
     CommandExecutor commandExecutor = processEngineConfiguration.getCommandExecutorTxRequired();
@@ -127,6 +132,19 @@ public class HistoricJobLogAuthorizationTest extends AuthorizationTest {
     // given
     startProcessAndExecuteJob(ONE_INCIDENT_PROCESS_KEY);
     createGrantAuthorization(PROCESS_DEFINITION, ANY, userId, READ_HISTORY);
+
+    // when
+    HistoricJobLogQuery query = historyService.createHistoricJobLogQuery();
+
+    // then
+    verifyQueryResults(query, 5);
+  }
+
+  public void testSimpleQueryWithMultiple() {
+    // given
+    startProcessAndExecuteJob(ONE_INCIDENT_PROCESS_KEY);
+    createGrantAuthorization(PROCESS_DEFINITION, ANY, userId, READ_HISTORY);
+    createGrantAuthorization(PROCESS_DEFINITION, ONE_INCIDENT_PROCESS_KEY, userId, READ_HISTORY);
 
     // when
     HistoricJobLogQuery query = historyService.createHistoricJobLogQuery();

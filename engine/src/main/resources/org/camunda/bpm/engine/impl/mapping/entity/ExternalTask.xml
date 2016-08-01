@@ -11,6 +11,8 @@
     <result property="workerId" column="WORKER_ID_" jdbcType="VARCHAR" />
     <result property="retries" column="RETRIES_" jdbcType="INTEGER" />
     <result property="errorMessage" column="ERROR_MSG_" jdbcType="VARCHAR"/>
+    <result property="errorDetailsByteArrayId" column="ERROR_DETAILS_ID_" jdbcType="VARCHAR" />
+
     <result property="lockExpirationTime" column="LOCK_EXP_TIME_" jdbcType="TIMESTAMP"/>
     <result property="suspensionState" column="SUSPENSION_STATE_" jdbcType="INTEGER" />
     <result property="executionId" column="EXECUTION_ID_" jdbcType="VARCHAR" />
@@ -20,6 +22,7 @@
     <result property="activityId" column="ACT_ID_" jdbcType="VARCHAR" />
     <result property="activityInstanceId" column="ACT_INST_ID_" jdbcType="VARCHAR" />
     <result property="tenantId" column="TENANT_ID_" jdbcType="VARCHAR" />
+    <result property="priority" column="PRIORITY_" jdbcType="BIGINT" />
     <!-- note: if you add mappings here, make sure to select the columns in 'columnSelection' -->
   </resultMap>
 
@@ -31,6 +34,7 @@
       LOCK_EXP_TIME_,
       RETRIES_,
       ERROR_MSG_,
+      ERROR_DETAILS_ID_,
       SUSPENSION_STATE_,
       EXECUTION_ID_,
       PROC_INST_ID_,
@@ -39,6 +43,7 @@
       ACT_ID_,
       ACT_INST_ID_,
       TENANT_ID_,
+      PRIORITY_,
       REV_
     ) values (
       #{id, jdbcType=VARCHAR},
@@ -47,6 +52,7 @@
       #{lockExpirationTime, jdbcType=TIMESTAMP},
       #{retries, jdbcType=INTEGER},
       #{errorMessage, jdbcType=VARCHAR},
+      #{errorDetailsByteArrayId, jdbcType=VARCHAR},
       #{suspensionState, jdbcType=INTEGER},
       #{executionId, jdbcType=VARCHAR},
       #{processInstanceId, jdbcType=VARCHAR},
@@ -55,6 +61,7 @@
       #{activityId, jdbcType=VARCHAR},
       #{activityInstanceId, jdbcType=VARCHAR},
       #{tenantId, jdbcType=VARCHAR},
+      #{priority, jdbcType=BIGINT},
       1
     )
   </insert>
@@ -68,32 +75,51 @@
       LOCK_EXP_TIME_ = #{lockExpirationTime, jdbcType=TIMESTAMP},
       RETRIES_ = #{retries, jdbcType=INTEGER},
       ERROR_MSG_ = #{errorMessage, jdbcType=VARCHAR},
+      ERROR_DETAILS_ID_ = #{errorDetailsByteArrayId, jdbcType=VARCHAR},
       EXECUTION_ID_ = #{executionId, jdbcType=VARCHAR},
       PROC_INST_ID_ = #{processInstanceId, jdbcType=VARCHAR},
       PROC_DEF_ID_ = #{processDefinitionId, jdbcType=VARCHAR},
       PROC_DEF_KEY_ = #{processDefinitionKey, jdbcType=VARCHAR},
       ACT_ID_ = #{activityId, jdbcType=VARCHAR},
       ACT_INST_ID_ = #{activityInstanceId, jdbcType=VARCHAR},
-      SUSPENSION_STATE_ = #{suspensionState, jdbcType=INTEGER}
+      SUSPENSION_STATE_ = #{suspensionState, jdbcType=INTEGER},
+      PRIORITY_ = #{priority, jdbcType=BIGINT}
     </set>
     where ID_= #{id, jdbcType=VARCHAR}
       and REV_ = #{revision, jdbcType=INTEGER}
   </update>
   
-  <update id="updateExternalTaskSuspensionStateByParameters" parameterType="map">
-    update ACT_RU_EXT_TASK
+  <update id="updateExternalTaskSuspensionStateByParameters" parameterType="org.camunda.bpm.engine.impl.db.ListQueryParameterObject">
+    update ${prefix}ACT_RU_EXT_TASK
     <set>
-      SUSPENSION_STATE_ = #{suspensionState, jdbcType=INTEGER}
+      SUSPENSION_STATE_ = #{parameter.suspensionState, jdbcType=INTEGER}
     </set>
     <where>
-      <if test="processInstanceId != null">
-        PROC_INST_ID_ = #{processInstanceId}
+      <if test="parameter.processInstanceId != null">
+        PROC_INST_ID_ = #{parameter.processInstanceId}
       </if>
-      <if test="processDefinitionId != null">
-        and PROC_DEF_ID_ = #{processDefinitionId}
+      <if test="parameter.processDefinitionId != null">
+        and PROC_DEF_ID_ = #{parameter.processDefinitionId}
       </if>
-      <if test="processDefinitionKey != null">
-        and PROC_DEF_KEY_ = #{processDefinitionKey}
+      <if test="parameter.processDefinitionKey != null">
+        <if test="!parameter.isProcessDefinitionTenantIdSet">
+          and PROC_DEF_KEY_ = #{parameter.processDefinitionKey, jdbcType=VARCHAR}
+        </if>
+        <if test="parameter.isProcessDefinitionTenantIdSet">
+          and PROC_DEF_ID_ IN (
+            SELECT ID_ 
+            FROM ${prefix}ACT_RE_PROCDEF PD
+            WHERE PD.KEY_ = #{parameter.processDefinitionKey, jdbcType=VARCHAR}
+            <if test="parameter.processDefinitionTenantId != null">
+              and PD.TENANT_ID_ = #{parameter.processDefinitionTenantId, jdbcType=VARCHAR}
+            </if>
+            <if test="parameter.processDefinitionTenantId == null">
+              and PD.TENANT_ID_ is null
+            </if>
+          )
+        </if>
+        <bind name="columnPrefix" value="''"/>
+        <include refid="org.camunda.bpm.engine.impl.persistence.entity.TenantEntity.queryTenantCheckWithPrefix" />
       </if>
     </where>
   </update>
@@ -110,10 +136,40 @@
     select * from ${prefix}ACT_RU_EXT_TASK where EXECUTION_ID_ = #{parameter, jdbcType=VARCHAR}
   </select>
   
+  <select id="selectExternalTasksByProcessInstanceId" parameterType="org.camunda.bpm.engine.impl.db.ListQueryParameterObject" resultMap="externalTaskResultMap">
+    select * from ${prefix}ACT_RU_EXT_TASK where PROC_INST_ID_ = #{parameter, jdbcType=VARCHAR}
+  </select>
+  
   <select id="selectExternalTasksForTopics" parameterType="org.camunda.bpm.engine.impl.db.ListQueryParameterObject" resultMap="externalTaskResultMap">
+    <bind name="orderingProperties" value="parameter.orderingProperties" />
+    <include refid="org.camunda.bpm.engine.impl.persistence.entity.Commons.bindOrderBy"/>
     ${limitBefore}
-    select RES.* ${limitBetween}
+    select ${distinct} RES.*
+    ${limitBetween}
     from ${prefix}ACT_RU_EXT_TASK RES
+
+    <if test="authCheck.isAuthorizationCheckEnabled &amp;&amp; !authCheck.revokeAuthorizationCheckEnabled &amp;&amp; authCheck.authUserId != null">
+      <include refid="org.camunda.bpm.engine.impl.persistence.entity.AuthorizationEntity.authCheckJoinWithoutOnClause" /> 
+      AUTH ON (
+       (AUTH.RESOURCE_TYPE_ = 8 
+        AND AUTH.RESOURCE_ID_ in (RES.PROC_INST_ID_, '*') 
+        AND ${bitand1}AUTH.PERMS_${bitand2}2${bitand3} = 2)
+      OR
+       (AUTH.RESOURCE_TYPE_ = 6 
+        AND AUTH.RESOURCE_ID_ in (RES.PROC_DEF_KEY_, '*') 
+        AND ${bitand1}AUTH.PERMS_${bitand2}512${bitand3} = 512) 
+      )
+      <include refid="org.camunda.bpm.engine.impl.persistence.entity.AuthorizationEntity.authCheckJoinWithoutOnClause" />
+      AUTH1 ON (
+         (AUTH1.RESOURCE_TYPE_ = 8 
+          AND AUTH1.RESOURCE_ID_ in (RES.PROC_INST_ID_, '*') 
+          AND ${bitand1}AUTH1.PERMS_${bitand2}4${bitand3} = 4)         
+      OR
+         (AUTH1.RESOURCE_TYPE_ = 6 
+          AND AUTH1.RESOURCE_ID_ in (RES.PROC_DEF_KEY_, '*') 
+          AND ${bitand1}AUTH1.PERMS_${bitand2}1024${bitand3} = 1024)
+      )    
+    </if>
     <where>
       (RES.LOCK_EXP_TIME_ is null or RES.LOCK_EXP_TIME_ &lt;= #{parameter.now, jdbcType=TIMESTAMP})
       and (RES.SUSPENSION_STATE_ is null or RES.SUSPENSION_STATE_ = 1)
@@ -126,13 +182,17 @@
       </if>
     </where>
     <include refid="org.camunda.bpm.engine.impl.persistence.entity.AuthorizationEntity.queryAuthorizationCheck" />
+    <include refid="org.camunda.bpm.engine.impl.persistence.entity.TenantEntity.queryTenantCheck" />
+    <if test="parameter.applyOrdering">
+      ${orderBy}
+    </if>
     ${limitAfter}
   </select>
   
   <select id="selectExternalTaskByQueryCriteria" parameterType="org.camunda.bpm.engine.impl.ExternalTaskQueryImpl" resultMap="externalTaskResultMap">
     <include refid="org.camunda.bpm.engine.impl.persistence.entity.Commons.bindOrderBy"/>
     ${limitBefore}
-    select distinct
+    select ${distinct}
     <include refid="columnSelection"/>
     ${limitBetween}
     <include refid="org.camunda.bpm.engine.impl.persistence.entity.Commons.orderBySelection"/> 
@@ -148,6 +208,19 @@
   
   <sql id="selectExternalTaskByQueryCriteriaSql">
     from ${prefix}ACT_RU_EXT_TASK RES
+    
+    <if test="authCheck.isAuthorizationCheckEnabled &amp;&amp; !authCheck.revokeAuthorizationCheckEnabled &amp;&amp; authCheck.authUserId != null">
+      <include refid="org.camunda.bpm.engine.impl.persistence.entity.AuthorizationEntity.authCheckJoinWithoutOnClause" /> 
+      AUTH ON (
+       (AUTH.RESOURCE_TYPE_ = 8 
+        AND AUTH.RESOURCE_ID_ in (RES.PROC_INST_ID_, '*') 
+        AND ${bitand1}AUTH.PERMS_${bitand2}2${bitand3} = 2)
+      OR
+       (AUTH.RESOURCE_TYPE_ = 6 
+        AND AUTH.RESOURCE_ID_ in (RES.PROC_DEF_KEY_, '*') 
+        AND ${bitand1}AUTH.PERMS_${bitand2}512${bitand3} = 512) 
+      )
+    </if>
     <where>
       <if test="externalTaskId != null">
         and RES.ID_ = #{externalTaskId}
@@ -200,6 +273,12 @@
             and RES.SUSPENSION_STATE_ = 2
         </if>
       </if>
+      <if test="priorityHigherThanOrEquals != null">
+        and RES.PRIORITY_ &gt;= #{priorityHigherThanOrEquals}
+      </if>
+      <if test="priorityLowerThanOrEquals != null">
+        and RES.PRIORITY_ &lt;= #{priorityLowerThanOrEquals}
+      </if>
       <if test="tenantIds != null &amp;&amp; tenantIds.length > 0">
         and RES.TENANT_ID_ in
         <foreach item="tenantId" index="index" collection="tenantIds"
@@ -208,6 +287,7 @@
         </foreach>
       </if>
       <include refid="org.camunda.bpm.engine.impl.persistence.entity.AuthorizationEntity.queryAuthorizationCheck" />
+      <include refid="org.camunda.bpm.engine.impl.persistence.entity.TenantEntity.queryTenantCheck" />
     </where>
   </sql>
   
@@ -219,6 +299,7 @@
     RES.LOCK_EXP_TIME_,
     RES.RETRIES_,
     RES.ERROR_MSG_,
+    RES.ERROR_DETAILS_ID_,
     RES.EXECUTION_ID_,
     RES.PROC_INST_ID_,
     RES.PROC_DEF_ID_,
@@ -226,6 +307,7 @@
     RES.ACT_ID_,
     RES.ACT_INST_ID_,
     RES.SUSPENSION_STATE_,
-    RES.TENANT_ID_
+    RES.TENANT_ID_,
+    RES.PRIORITY_
   </sql>
 </mapper>

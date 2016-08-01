@@ -19,10 +19,12 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.ext.Providers;
 
 import org.camunda.bpm.engine.rest.AuthorizationRestService;
+import org.camunda.bpm.engine.rest.BatchRestService;
 import org.camunda.bpm.engine.rest.CaseDefinitionRestService;
 import org.camunda.bpm.engine.rest.CaseExecutionRestService;
 import org.camunda.bpm.engine.rest.CaseInstanceRestService;
 import org.camunda.bpm.engine.rest.DecisionDefinitionRestService;
+import org.camunda.bpm.engine.rest.DecisionRequirementsDefinitionRestService;
 import org.camunda.bpm.engine.rest.DeploymentRestService;
 import org.camunda.bpm.engine.rest.ExecutionRestService;
 import org.camunda.bpm.engine.rest.ExternalTaskRestService;
@@ -38,6 +40,7 @@ import org.camunda.bpm.engine.rest.MigrationRestService;
 import org.camunda.bpm.engine.rest.ProcessDefinitionRestService;
 import org.camunda.bpm.engine.rest.ProcessInstanceRestService;
 import org.camunda.bpm.engine.rest.TaskRestService;
+import org.camunda.bpm.engine.rest.TenantRestService;
 import org.camunda.bpm.engine.rest.UserRestService;
 import org.camunda.bpm.engine.rest.VariableInstanceRestService;
 import org.camunda.bpm.engine.rest.history.HistoryRestService;
@@ -209,6 +212,13 @@ public abstract class AbstractProcessEngineRestServiceImpl {
     return subResource;
   }
 
+  public DecisionRequirementsDefinitionRestService getDecisionRequirementsDefinitionRestService(String engineName) {
+    String rootResourcePath = getRelativeEngineUri(engineName).toASCIIString();
+    DecisionRequirementsDefinitionRestServiceImpl subResource = new DecisionRequirementsDefinitionRestServiceImpl(engineName, getObjectMapper());
+    subResource.setRelativeRootResourceUri(rootResourcePath);
+    return subResource;
+  }
+
   public ExternalTaskRestService getExternalTaskRestService(String engineName) {
     String rootResourcePath = getRelativeEngineUri(engineName).toASCIIString();
     ExternalTaskRestServiceImpl subResource = new ExternalTaskRestServiceImpl(engineName, getObjectMapper());
@@ -219,6 +229,20 @@ public abstract class AbstractProcessEngineRestServiceImpl {
   public MigrationRestService getMigrationRestService(String engineName) {
     String rootResourcePath = getRelativeEngineUri(engineName).toASCIIString();
     MigrationRestServiceImpl subResource = new MigrationRestServiceImpl(engineName, getObjectMapper());
+    subResource.setRelativeRootResourceUri(rootResourcePath);
+    return subResource;
+  }
+
+  public BatchRestService getBatchRestService(String engineName) {
+    String rootResourcePath = getRelativeEngineUri(engineName).toASCIIString();
+    BatchRestServiceImpl subResource = new BatchRestServiceImpl(engineName, getObjectMapper());
+    subResource.setRelativeRootResourceUri(rootResourcePath);
+    return subResource;
+  }
+
+  public TenantRestService getTenantRestService(String engineName) {
+    String rootResourcePath = getRelativeEngineUri(engineName).toASCIIString();
+    TenantRestServiceImpl subResource = new TenantRestServiceImpl(engineName, getObjectMapper());
     subResource.setRelativeRootResourceUri(rootResourcePath);
     return subResource;
   }

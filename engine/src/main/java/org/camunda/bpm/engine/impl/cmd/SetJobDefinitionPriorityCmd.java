@@ -18,12 +18,12 @@ import org.camunda.bpm.engine.EntityTypes;
 import org.camunda.bpm.engine.exception.NotFoundException;
 import org.camunda.bpm.engine.exception.NotValidException;
 import org.camunda.bpm.engine.history.UserOperationLogEntry;
+import org.camunda.bpm.engine.impl.cfg.CommandChecker;
 import org.camunda.bpm.engine.impl.interceptor.Command;
 import org.camunda.bpm.engine.impl.interceptor.CommandContext;
 import org.camunda.bpm.engine.impl.oplog.UserOperationLogContext;
 import org.camunda.bpm.engine.impl.oplog.UserOperationLogContextEntry;
 import org.camunda.bpm.engine.impl.oplog.UserOperationLogContextEntryBuilder;
-import org.camunda.bpm.engine.impl.persistence.entity.AuthorizationManager;
 import org.camunda.bpm.engine.impl.persistence.entity.JobDefinitionEntity;
 import org.camunda.bpm.engine.impl.persistence.entity.PropertyChange;
 
@@ -55,7 +55,7 @@ public class SetJobDefinitionPriorityCmd implements Command<Void> {
         "jobDefinition",
         jobDefinition);
 
-    checkAuthorization(commandContext, jobDefinition);
+    checkUpdateProcess(commandContext, jobDefinition);
 
     Long currentPriority = jobDefinition.getOverridingJobPriority();
     jobDefinition.setJobPriority(priority);
@@ -73,14 +73,16 @@ public class SetJobDefinitionPriorityCmd implements Command<Void> {
     return null;
   }
 
-  protected void checkAuthorization(CommandContext commandContext, JobDefinitionEntity jobDefinition) {
-    AuthorizationManager authorizationManager = commandContext.getAuthorizationManager();
+  protected void checkUpdateProcess(CommandContext commandContext, JobDefinitionEntity jobDefinition) {
 
-    String processDefinitionKey = jobDefinition.getProcessDefinitionKey();
-    authorizationManager.checkUpdateProcessDefinitionByKey(processDefinitionKey);
+    String processDefinitionId = jobDefinition.getProcessDefinitionId();
 
-    if (cascade) {
-      authorizationManager.checkUpdateProcessInstanceByProcessDefinitionKey(processDefinitionKey);
+    for(CommandChecker checker : commandContext.getProcessEngineConfiguration().getCommandCheckers()) {
+      checker.checkUpdateProcessDefinitionById(processDefinitionId);
+
+      if (cascade) {
+        checker.checkUpdateProcessInstanceByProcessDefinitionId(processDefinitionId);
+      }
     }
   }
 

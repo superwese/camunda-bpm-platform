@@ -25,8 +25,6 @@ import java.util.Set;
 import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.identity.Group;
 import org.camunda.bpm.engine.impl.context.Context;
-import org.camunda.bpm.engine.impl.db.PermissionCheck;
-import org.camunda.bpm.engine.impl.db.CompositePermissionCheck;
 import org.camunda.bpm.engine.impl.interceptor.CommandContext;
 import org.camunda.bpm.engine.impl.interceptor.CommandExecutor;
 import org.camunda.bpm.engine.impl.persistence.entity.SuspensionState;
@@ -59,16 +57,18 @@ public class TaskQueryImpl extends AbstractQuery<TaskQuery, Task> implements Tas
   protected String involvedUser;
   protected String owner;
   protected Boolean unassigned;
+  protected Boolean assigned;
   protected boolean noDelegationState = false;
   protected DelegationState delegationState;
   protected String candidateUser;
   protected String candidateGroup;
   protected List<String> candidateGroups;
+  protected Boolean withCandidateGroups;
+  protected Boolean withoutCandidateGroups;
   protected Boolean includeAssignedTasks;
   protected String processInstanceId;
   protected String executionId;
   protected String[] activityInstanceIdIn;
-  protected String[] tenantIds;
   protected Date createTime;
   protected Date createTimeBefore;
   protected Date createTimeAfter;
@@ -95,8 +95,11 @@ public class TaskQueryImpl extends AbstractQuery<TaskQuery, Task> implements Tas
   protected SuspensionState suspensionState;
   protected boolean initializeFormKeys = false;
   protected boolean taskNameCaseInsensitive = false;
-  protected String parentTaskId;
 
+  protected String parentTaskId;
+  protected boolean isTenantIdSet = false;
+
+  protected String[] tenantIds;
   // case management /////////////////////////////
   protected String caseDefinitionKey;
   protected String caseDefinitionId;
@@ -106,9 +109,6 @@ public class TaskQueryImpl extends AbstractQuery<TaskQuery, Task> implements Tas
   protected String caseInstanceBusinessKey;
   protected String caseInstanceBusinessKeyLike;
   protected String caseExecutionId;
-
-  // its a workaround to check authorization for standalone tasks
-  protected CompositePermissionCheck taskPermissionChecks = new CompositePermissionCheck();
 
   public TaskQueryImpl() {
   }
@@ -231,6 +231,12 @@ public class TaskQueryImpl extends AbstractQuery<TaskQuery, Task> implements Tas
   }
 
   @Override
+  public TaskQuery taskAssigned() {
+    this.assigned = true;
+    return this;
+  }
+
+  @Override
   public TaskQuery taskDelegationState(DelegationState delegationState) {
     if (delegationState == null) {
       this.noDelegationState = true;
@@ -282,6 +288,18 @@ public class TaskQueryImpl extends AbstractQuery<TaskQuery, Task> implements Tas
   public TaskQuery taskInvolvedUserExpression(String involvedUserExpression) {
     ensureNotNull("Involved user expression", involvedUserExpression);
     expressions.put("taskInvolvedUser", involvedUserExpression);
+    return this;
+  }
+
+  @Override
+  public TaskQuery withCandidateGroups() {
+    this.withCandidateGroups = true;
+    return this;
+  }
+
+  @Override
+  public TaskQuery withoutCandidateGroups() {
+    this.withoutCandidateGroups = true;
     return this;
   }
 
@@ -348,10 +366,10 @@ public class TaskQueryImpl extends AbstractQuery<TaskQuery, Task> implements Tas
 
   @Override
   public TaskQuery includeAssignedTasks() {
-    if (candidateUser == null && candidateGroup == null && candidateGroups == null
+    if (candidateUser == null && candidateGroup == null && candidateGroups == null && !isWithCandidateGroups() && !isWithoutCandidateGroups()
         && !expressions.containsKey("taskCandidateUser") && !expressions.containsKey("taskCandidateGroup")
         && !expressions.containsKey("taskCandidateGroupIn")) {
-      throw new ProcessEngineException("Invalid query usage: candidateUser, candidateGroup, candidateGroupIn has to be called before 'includeAssignedTasks'.");
+      throw new ProcessEngineException("Invalid query usage: candidateUser, candidateGroup, candidateGroupIn, withCandidateGroups, withoutCandidateGroups has to be called before 'includeAssignedTasks'.");
     }
 
     includeAssignedTasks = true;
@@ -403,6 +421,14 @@ public class TaskQueryImpl extends AbstractQuery<TaskQuery, Task> implements Tas
   public TaskQuery tenantIdIn(String... tenantIds) {
     ensureNotNull("tenantIds", (Object[]) tenantIds);
     this.tenantIds = tenantIds;
+    this.isTenantIdSet = true;
+    return this;
+  }
+
+  @Override
+  public TaskQuery withoutTenantId() {
+    this.tenantIds = null;
+    this.isTenantIdSet = true;
     return this;
   }
 
@@ -832,6 +858,30 @@ public class TaskQueryImpl extends AbstractQuery<TaskQuery, Task> implements Tas
     return null;
   }
 
+  public Boolean isWithCandidateGroups() {
+    if (withCandidateGroups == null) {
+      return false;
+    } else {
+      return withCandidateGroups;
+    }
+  }
+
+  public Boolean isWithCandidateGroupsInternal() {
+    return withCandidateGroups;
+  }
+
+  public Boolean isWithoutCandidateGroups() {
+    if (withoutCandidateGroups == null) {
+      return false;
+    } else {
+      return withoutCandidateGroups;
+    }
+  }
+
+  public Boolean isWithoutCandidateGroupsInternal() {
+    return withoutCandidateGroups;
+  }
+
   public List<String> getCandidateGroupsInternal() {
     return candidateGroups;
   }
@@ -1066,6 +1116,18 @@ public class TaskQueryImpl extends AbstractQuery<TaskQuery, Task> implements Tas
     return owner;
   }
 
+  public Boolean isAssigned() {
+    if (assigned == null) {
+      return false;
+    } else {
+      return assigned;
+    }
+  }
+
+  public Boolean isAssignedInternal() {
+    return assigned;
+  }
+
   public boolean isUnassigned() {
     if (unassigned == null) {
       return false;
@@ -1283,12 +1345,16 @@ public class TaskQueryImpl extends AbstractQuery<TaskQuery, Task> implements Tas
     return taskNameCaseInsensitive;
   }
 
+  public boolean isTenantIdSet() {
+    return isTenantIdSet;
+  }
+
   @Override
   public TaskQuery extend(TaskQuery extending) {
     TaskQueryImpl extendingQuery = (TaskQueryImpl) extending;
     TaskQueryImpl extendedQuery = new TaskQueryImpl();
 
-    // only add add the base query's validators to the new query;
+    // only add the base query's validators to the new query;
     // this is because the extending query's validators may not be applicable to the base
     // query and should therefore be executed before extending the query
     extendedQuery.validators = new HashSet<Validator<AbstractQuery<?, ?>>>(validators);
@@ -1335,6 +1401,10 @@ public class TaskQueryImpl extends AbstractQuery<TaskQuery, Task> implements Tas
       extendedQuery.taskOwner(this.getOwner());
     }
 
+    if (extendingQuery.isAssigned() || this.isAssigned()) {
+      extendedQuery.taskAssigned();
+    }
+
     if (extendingQuery.isUnassigned() || this.isUnassigned()) {
       extendedQuery.taskUnassigned();
     }
@@ -1358,6 +1428,14 @@ public class TaskQueryImpl extends AbstractQuery<TaskQuery, Task> implements Tas
     }
     else if (this.getCandidateGroup() != null) {
       extendedQuery.taskCandidateGroup(this.getCandidateGroup());
+    }
+
+    if (extendingQuery.isWithCandidateGroups() || this.isWithCandidateGroups()) {
+      extendedQuery.withCandidateGroups();
+    }
+
+    if (extendingQuery.isWithoutCandidateGroups() || this.isWithoutCandidateGroups()) {
+      extendedQuery.withoutCandidateGroups();
     }
 
     if (extendingQuery.getCandidateGroupsInternal() != null) {
@@ -1659,13 +1737,27 @@ public class TaskQueryImpl extends AbstractQuery<TaskQuery, Task> implements Tas
       extendedQuery.taskNameCaseInsensitive();
     }
 
+    if (extendingQuery.isTenantIdSet()) {
+      if (extendingQuery.getTenantIds() != null) {
+        extendedQuery.tenantIdIn(extendingQuery.getTenantIds());
+      } else {
+        extendedQuery.withoutTenantId();
+      }
+    } else if (this.isTenantIdSet()) {
+      if (this.getTenantIds() != null) {
+        extendedQuery.tenantIdIn(this.getTenantIds());
+      } else {
+        extendedQuery.withoutTenantId();
+      }
+    }
+
     // merge variables
     mergeVariables(extendedQuery, extendingQuery);
 
     // merge expressions
     mergeExpressions(extendedQuery, extendingQuery);
 
-    // include assigned tasks has to be set after expression as it asserts on already set
+    // include taskAssigned tasks has to be set after expression as it asserts on already set
     // candidate properties which could be expressions
     if (extendingQuery.isIncludeAssignedTasks() || this.isIncludeAssignedTasks()) {
       extendedQuery.includeAssignedTasks();
@@ -1735,19 +1827,5 @@ public class TaskQueryImpl extends AbstractQuery<TaskQuery, Task> implements Tas
 
   public boolean isFollowUpNullAccepted() {
     return followUpNullAccepted;
-  }
-
-  // getter/setter for authorization check
-
-  public CompositePermissionCheck getTaskPermissionChecks() {
-    return taskPermissionChecks;
-  }
-
-  public void setTaskPermissionChecks(List<PermissionCheck> taskPermissionChecks) {
-    this.taskPermissionChecks.setAtomicChecks(taskPermissionChecks);
-  }
-
-  public void addTaskPermissionCheck(PermissionCheck permissionCheck) {
-    taskPermissionChecks.addAtomicCheck(permissionCheck);
   }
 }

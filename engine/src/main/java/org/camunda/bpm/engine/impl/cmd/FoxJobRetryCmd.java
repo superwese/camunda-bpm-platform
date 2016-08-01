@@ -20,7 +20,7 @@ import org.camunda.bpm.engine.impl.interceptor.CommandContext;
 import org.camunda.bpm.engine.impl.jobexecutor.AsyncContinuationJobHandler;
 import org.camunda.bpm.engine.impl.jobexecutor.JobExecutorLogger;
 import org.camunda.bpm.engine.impl.jobexecutor.TimerCatchIntermediateEventJobHandler;
-import org.camunda.bpm.engine.impl.jobexecutor.TimerEventJobHandler;
+import org.camunda.bpm.engine.impl.jobexecutor.TimerEventJobHandler.TimerJobConfiguration;
 import org.camunda.bpm.engine.impl.jobexecutor.TimerExecuteNestedActivityJobHandler;
 import org.camunda.bpm.engine.impl.jobexecutor.TimerStartEventJobHandler;
 import org.camunda.bpm.engine.impl.persistence.deploy.DeploymentCache;
@@ -96,20 +96,22 @@ public class FoxJobRetryCmd extends JobRetryCmd {
     String type = job.getJobHandlerType();
     ActivityImpl activity = null;
 
-    String configuration = job.getJobHandlerConfiguration();
-
     if (TimerExecuteNestedActivityJobHandler.TYPE.equals(type)
         || TimerCatchIntermediateEventJobHandler.TYPE.equals(type)) {
       ExecutionEntity execution = fetchExecutionEntity(job.getExecutionId());
       if (execution != null) {
-        String acitivtyId = TimerEventJobHandler.getKey(configuration);
+        TimerJobConfiguration configuration = (TimerJobConfiguration) job.getJobHandlerConfiguration();
+
+        String acitivtyId = configuration.getTimerElementKey();
         activity = execution.getProcessDefinition().findActivity(acitivtyId);
       }
 
     } else if (TimerStartEventJobHandler.TYPE.equals(type)) {
+      TimerJobConfiguration configuration = (TimerJobConfiguration) job.getJobHandlerConfiguration();
+
       DeploymentCache deploymentCache = Context.getProcessEngineConfiguration().getDeploymentCache();
-      String definitionKey = TimerEventJobHandler.getKey(configuration);
-      ProcessDefinitionEntity processDefinition = deploymentCache.findDeployedLatestProcessDefinitionByKey(definitionKey);
+      String definitionKey = configuration.getTimerElementKey();
+      ProcessDefinitionEntity processDefinition = deploymentCache.findDeployedLatestProcessDefinitionByKeyAndTenantId(definitionKey, job.getTenantId());
       if (processDefinition != null) {
         activity = processDefinition.getInitial();
       }

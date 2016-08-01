@@ -14,7 +14,6 @@ package org.camunda.bpm.engine.impl.jobexecutor;
 
 import org.camunda.bpm.engine.impl.cmd.AbstractSetProcessDefinitionStateCmd;
 import org.camunda.bpm.engine.impl.cmd.ActivateProcessDefinitionCmd;
-import org.camunda.bpm.engine.impl.util.json.JSONObject;
 
 /**
  * @author Joram Barrez
@@ -28,26 +27,8 @@ public class TimerActivateProcessDefinitionHandler extends TimerChangeProcessDef
     return TYPE;
   }
 
-  protected AbstractSetProcessDefinitionStateCmd getCommand(String configuration) {
-    JSONObject config = new JSONObject(configuration);
-
-    boolean activateProcessInstances = getIncludeProcessInstances(config);
-
-    ActivateProcessDefinitionCmd cmd = null;
-
-    String by = getBy(config);
-
-    if (by.equals(JOB_HANDLER_CFG_PROCESS_DEFINITION_ID)) {
-      String processDefinitionId = getProcessDefinitionId(config);
-      cmd = new ActivateProcessDefinitionCmd(processDefinitionId, null, activateProcessInstances, null);
-    } else
-
-    if (by.equals(JOB_HANDLER_CFG_PROCESS_DEFINITION_KEY)) {
-      String processDefinitionKey = getProcessDefinitionKey(config);
-      cmd = new ActivateProcessDefinitionCmd(null, processDefinitionKey, activateProcessInstances, null);
-    }
-
-    return cmd;
+  @Override
+  protected AbstractSetProcessDefinitionStateCmd getCommand(ProcessDefinitionSuspensionStateConfiguration configuration) {
+    return new ActivateProcessDefinitionCmd(configuration.createBuilder());
   }
-
 }

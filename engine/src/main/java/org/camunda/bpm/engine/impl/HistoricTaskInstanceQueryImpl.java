@@ -50,9 +50,17 @@ public class HistoricTaskInstanceQueryImpl extends AbstractQuery<HistoricTaskIns
   protected String taskDeleteReasonLike;
   protected String taskOwner;
   protected String taskOwnerLike;
+  protected Boolean assigned;
+  protected Boolean unassigned;
   protected String taskAssignee;
   protected String taskAssigneeLike;
   protected String taskDefinitionKey;
+  protected String taskInvolvedUser;
+  protected String taskInvolvedGroup;
+  protected String taskHadCandidateUser;
+  protected String taskHadCandidateGroup;
+  protected Boolean withCandidateGroups;
+  protected Boolean withoutCandidateGroups;
   protected Integer taskPriority;
   protected boolean finished;
   protected boolean unfinished;
@@ -64,9 +72,9 @@ public class HistoricTaskInstanceQueryImpl extends AbstractQuery<HistoricTaskIns
   protected Date dueBefore;
   protected Date followUpDate;
   protected Date followUpBefore;
+
   protected Date followUpAfter;
   protected String[] tenantIds;
-
   protected String caseDefinitionId;
   protected String caseDefinitionKey;
   protected String caseDefinitionName;
@@ -169,6 +177,16 @@ public class HistoricTaskInstanceQueryImpl extends AbstractQuery<HistoricTaskIns
     return this;
   }
 
+  public HistoricTaskInstanceQueryImpl taskAssigned() {
+    this.assigned = true;
+    return this;
+  }
+
+  public HistoricTaskInstanceQueryImpl taskUnassigned() {
+    this.unassigned = true;
+    return this;
+  }
+
   public HistoricTaskInstanceQueryImpl taskAssignee(String taskAssignee) {
     this.taskAssignee = taskAssignee;
     return this;
@@ -246,6 +264,36 @@ public class HistoricTaskInstanceQueryImpl extends AbstractQuery<HistoricTaskIns
 
   public HistoricTaskInstanceQuery processFinished() {
     this.processFinished = true;
+    return this;
+  }
+
+  public HistoricTaskInstanceQuery taskInvolvedUser(String userId){
+    this.taskInvolvedUser = userId;
+    return this;
+  }
+
+  public HistoricTaskInstanceQuery taskInvolvedGroup(String groupId){
+    this.taskInvolvedGroup = groupId;
+    return this;
+  }
+
+  public HistoricTaskInstanceQuery taskHadCandidateUser(String userId){
+    this.taskHadCandidateUser = userId;
+    return this;
+  }
+
+  public HistoricTaskInstanceQuery taskHadCandidateGroup(String groupId){
+    this.taskHadCandidateGroup = groupId;
+    return this;
+  }
+
+  public HistoricTaskInstanceQuery withCandidateGroups() {
+    this.withCandidateGroups = true;
+    return this;
+  }
+
+  public HistoricTaskInstanceQuery withoutCandidateGroups() {
+    this.withoutCandidateGroups = true;
     return this;
   }
 
@@ -428,6 +476,22 @@ public class HistoricTaskInstanceQueryImpl extends AbstractQuery<HistoricTaskIns
 
   public String getProcessDefinitionId() {
     return processDefinitionId;
+  }
+
+  public Boolean isAssigned() {
+    return assigned;
+  }
+
+  public Boolean isUnassigned() {
+    return unassigned;
+  }
+
+  public Boolean isWithCandidateGroups() {
+    return withCandidateGroups;
+  }
+
+  public Boolean isWithoutCandidateGroups() {
+    return withoutCandidateGroups;
   }
 
   public boolean isFinished() {

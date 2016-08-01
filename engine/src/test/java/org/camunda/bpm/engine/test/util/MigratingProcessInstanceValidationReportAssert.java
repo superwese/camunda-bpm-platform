@@ -15,16 +15,15 @@ package org.camunda.bpm.engine.test.util;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 
-import org.camunda.bpm.engine.impl.migration.validation.instance.MigratingActivityInstanceValidationReport;
+import org.camunda.bpm.engine.migration.MigratingActivityInstanceValidationReport;
 import org.camunda.bpm.engine.migration.MigratingProcessInstanceValidationReport;
-import org.camunda.bpm.engine.migration.MigrationInstruction;
+import org.camunda.bpm.engine.migration.MigratingTransitionInstanceValidationReport;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.hamcrest.Matcher;
 import org.hamcrest.Matchers;
@@ -51,7 +50,7 @@ public class MigratingProcessInstanceValidationReportAssert {
   public MigratingProcessInstanceValidationReportAssert hasProcessInstanceId(String processInstanceId) {
     isNotNull();
 
-    assertEquals("Expected report to be for process instance", processInstanceId, actual.getMigratingProcessInstance().getProcessInstanceId());
+    assertEquals("Expected report to be for process instance", processInstanceId, actual.getProcessInstanceId());
 
     return this;
   }
@@ -77,7 +76,7 @@ public class MigratingProcessInstanceValidationReportAssert {
     isNotNull();
 
     MigratingActivityInstanceValidationReport actualReport = null;
-    for (MigratingActivityInstanceValidationReport instanceReport : actual.getReports()) {
+    for (MigratingActivityInstanceValidationReport instanceReport : actual.getActivityInstanceReports()) {
       if (sourceScopeId.equals(instanceReport.getSourceScopeId())) {
         actualReport = instanceReport;
         break;
@@ -86,18 +85,39 @@ public class MigratingProcessInstanceValidationReportAssert {
 
     assertNotNull("No validation report found for source scope: " + sourceScopeId, actualReport);
 
-    List<String> actualFailures = actualReport.getFailures();
+    assertFailures(sourceScopeId, Arrays.asList(expectedFailures), actualReport.getFailures());
+
+    return this;
+  }
+
+  public MigratingProcessInstanceValidationReportAssert hasTransitionInstanceFailures(String sourceScopeId, String... expectedFailures) {
+    isNotNull();
+
+    MigratingTransitionInstanceValidationReport actualReport = null;
+    for (MigratingTransitionInstanceValidationReport instanceReport : actual.getTransitionInstanceReports()) {
+      if (sourceScopeId.equals(instanceReport.getSourceScopeId())) {
+        actualReport = instanceReport;
+        break;
+      }
+    }
+
+    assertNotNull("No validation report found for source scope: " + sourceScopeId, actualReport);
+
+    assertFailures(sourceScopeId, Arrays.asList(expectedFailures), actualReport.getFailures());
+
+    return this;
+  }
+
+  protected void assertFailures(String sourceScopeId, List<String> expectedFailures, List<String> actualFailures) {
 
     Collection<Matcher<? super String>> matchers = new ArrayList<Matcher<? super String>>();
     for (String expectedFailure : expectedFailures) {
       matchers.add(Matchers.containsString(expectedFailure));
     }
 
-    Assert.assertThat("Expected failures for source scope: " + sourceScopeId + "\n" + joinFailures(Arrays.asList(expectedFailures)) +
+    Assert.assertThat("Expected failures for source scope: " + sourceScopeId + "\n" + joinFailures(expectedFailures) +
         "But found failures:\n" + joinFailures(actualFailures),
       actualFailures, Matchers.containsInAnyOrder(matchers));
-
-    return this;
   }
 
   public static MigratingProcessInstanceValidationReportAssert assertThat(MigratingProcessInstanceValidationReport report) {

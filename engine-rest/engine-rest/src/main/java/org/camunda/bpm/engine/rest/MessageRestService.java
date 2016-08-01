@@ -18,6 +18,7 @@ import javax.ws.rs.Consumes;
 import javax.ws.rs.POST;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 
 @Produces(MediaType.APPLICATION_JSON)
 public interface MessageRestService {
@@ -26,5 +27,6 @@ public interface MessageRestService {
 
   @POST
   @Consumes(MediaType.APPLICATION_JSON)
-  void deliverMessage(CorrelationMessageDto messageDto);
+  @Produces(MediaType.APPLICATION_JSON)
+  Response deliverMessage(CorrelationMessageDto messageDto);
 }

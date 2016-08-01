@@ -19,11 +19,11 @@ import static org.hamcrest.CoreMatchers.hasItems;
 import static org.hamcrest.CoreMatchers.is;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyString;
-import static org.mockito.Matchers.argThat;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyZeroInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -77,7 +77,6 @@ import org.camunda.bpm.engine.repository.Deployment;
 import org.camunda.bpm.engine.repository.DeploymentQuery;
 import org.camunda.bpm.engine.repository.ProcessDefinition;
 import org.camunda.bpm.engine.rest.exception.InvalidRequestException;
-import org.camunda.bpm.engine.rest.helper.EqualsMap;
 import org.camunda.bpm.engine.rest.helper.MockProvider;
 import org.camunda.bpm.engine.rest.util.container.TestContainerRule;
 import org.camunda.bpm.engine.runtime.CaseExecution;
@@ -105,20 +104,22 @@ import org.junit.Test;
 import org.mockito.Matchers;
 
 import com.jayway.restassured.http.ContentType;
+import org.camunda.bpm.engine.runtime.MessageCorrelationResult;
 
 public class ProcessEngineRestServiceTest extends
     AbstractRestServiceTest {
 
   @ClassRule
   public static TestContainerRule rule = new TestContainerRule();
-  
+
   protected static final String ENGINES_URL = TEST_RESOURCE_ROOT_PATH + "/engine";
   protected static final String SINGLE_ENGINE_URL = ENGINES_URL + "/{name}";
   protected static final String PROCESS_DEFINITION_URL = SINGLE_ENGINE_URL + "/process-definition/{id}";
   protected static final String PROCESS_INSTANCE_URL = SINGLE_ENGINE_URL + "/process-instance/{id}";
   protected static final String TASK_URL = SINGLE_ENGINE_URL + "/task/{id}";
   protected static final String IDENTITY_GROUPS_URL = SINGLE_ENGINE_URL + "/identity/groups";
-  protected static final String MESSAGE_URL = SINGLE_ENGINE_URL + "/message";
+  protected static final String MESSAGE_URL = SINGLE_ENGINE_URL + MessageRestService.PATH;
+
   protected static final String EXECUTION_URL = SINGLE_ENGINE_URL + "/execution";
   protected static final String VARIABLE_INSTANCE_URL = SINGLE_ENGINE_URL + "/variable-instance";
   protected static final String USER_URL = SINGLE_ENGINE_URL + "/user";
@@ -163,6 +164,7 @@ public class ProcessEngineRestServiceTest extends
   private CaseService mockCaseService;
   private FilterService mockFilterService;
   private MessageCorrelationBuilder mockMessageCorrelationBuilder;
+  private MessageCorrelationResult mockMessageCorrelationResult;
 
   @Before
   public void setUpRuntimeData() {
@@ -330,8 +332,10 @@ public class ProcessEngineRestServiceTest extends
 
   private void createMessageCorrelationBuilderMock() {
     mockMessageCorrelationBuilder = mock(MessageCorrelationBuilder.class);
+    mockMessageCorrelationResult = mock(MessageCorrelationResult.class);
 
     when(mockRuntimeService.createMessageCorrelation(anyString())).thenReturn(mockMessageCorrelationBuilder);
+    when(mockMessageCorrelationBuilder.correlateWithResult()).thenReturn(mockMessageCorrelationResult);
     when(mockMessageCorrelationBuilder.processInstanceId(anyString())).thenReturn(mockMessageCorrelationBuilder);
     when(mockMessageCorrelationBuilder.processInstanceBusinessKey(anyString())).thenReturn(mockMessageCorrelationBuilder);
     when(mockMessageCorrelationBuilder.processInstanceVariableEquals(anyString(), any())).thenReturn(mockMessageCorrelationBuilder);
@@ -515,10 +519,28 @@ public class ProcessEngineRestServiceTest extends
       .when().post(MESSAGE_URL);
 
     verify(mockRuntimeService).createMessageCorrelation(eq(messageName));
-    verify(mockMessageCorrelationBuilder).setVariables(argThat(new EqualsMap(null)));
-    verify(mockMessageCorrelationBuilder).processInstanceBusinessKey(eq((String) null));
+    verify(mockMessageCorrelationBuilder).correlateWithResult();
+    verifyNoMoreInteractions(mockMessageCorrelationBuilder);
     verifyZeroInteractions(processEngine);
   }
+
+  @Test
+  public void testMessageWithResultServiceEngineAccess() {
+    String messageName = "aMessage";
+    Map<String, Object> messageParameters = new HashMap<String, Object>();
+    messageParameters.put("messageName", messageName);
+    messageParameters.put("resultEnabled", true);
+
+    given().contentType(POST_JSON_CONTENT_TYPE).body(messageParameters).pathParam("name", EXAMPLE_ENGINE_NAME)
+      .then().expect().contentType(ContentType.JSON).statusCode(Status.OK.getStatusCode())
+      .when().post(MESSAGE_URL);
+
+    verify(mockRuntimeService).createMessageCorrelation(eq(messageName));
+    verify(mockMessageCorrelationBuilder).correlateWithResult();
+    verifyNoMoreInteractions(mockMessageCorrelationBuilder);
+    verifyZeroInteractions(processEngine);
+  }
+
 
   @Test
   public void testExecutionServiceEngineAccess() {

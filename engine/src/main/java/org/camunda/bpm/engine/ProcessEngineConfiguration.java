@@ -17,6 +17,7 @@ import java.io.InputStream;
 
 import javax.sql.DataSource;
 
+import org.camunda.bpm.engine.authorization.Authorization;
 import org.camunda.bpm.engine.delegate.JavaDelegate;
 import org.camunda.bpm.engine.impl.cfg.BeansConfigurationHelper;
 import org.camunda.bpm.engine.impl.cfg.StandaloneInMemProcessEngineConfiguration;
@@ -137,6 +138,36 @@ public abstract class ProcessEngineConfiguration {
    */
   public static final String HISTORY_DEFAULT = HISTORY_AUDIT;
 
+  /**
+   * Always enables check for {@link Authorization#AUTH_TYPE_REVOKE revoke} authorizations.
+   * This mode is equal to the &lt; 7.5 behavior.
+   *<p />
+   * *NOTE:* Checking revoke authorizations is very expensive for resources with a high potential
+   * cardinality like tasks or process instances and can render authorized access to the process engine
+   * effectively unusable on most databases. You are therefore strongly discouraged from using this mode.
+   *
+   */
+  public static final String AUTHORIZATION_CHECK_REVOKE_ALWAYS = "always";
+
+  /**
+   * Never checks for {@link Authorization#AUTH_TYPE_REVOKE revoke} authorizations. This mode
+   * has best performance effectively disables the use of {@link Authorization#AUTH_TYPE_REVOKE}.
+   * *Note*: It is strongly recommended to use this mode.
+   */
+  public static final String AUTHORIZATION_CHECK_REVOKE_NEVER = "never";
+
+  /**
+   * This mode only checks for {@link Authorization#AUTH_TYPE_REVOKE revoke} authorizations if at least
+   * one revoke authorization currently exits for the current user or one of the groups the user is a member
+   * of. To achieve this it is checked once per command whether potentially applicable revoke authorizations
+   * exist. Based on the outcome, the authorization check then uses revoke or not.
+   *<p />
+   * *NOTE:* Checking revoke authorizations is very expensive for resources with a high potential
+   * cardinality like tasks or process instances and can render authorized access to the process engine
+   * effectively unusable on most databases.
+   */
+  public static final String AUTHORIZATION_CHECK_REVOKE_AUTO = "auto";
+
   protected String processEngineName = ProcessEngines.NAME_DEFAULT;
   protected int idBlockSize = 100;
   protected String history = HISTORY_DEFAULT;
@@ -147,6 +178,7 @@ public abstract class ProcessEngineConfiguration {
   protected boolean jobExecutorAcquireByPriority = false;
 
   protected boolean producePrioritizedJobs = true;
+  protected boolean producePrioritizedExternalTasks = true;
 
   /**
    * The flag will be used inside the method "JobManager#send()". It will be used to decide whether to notify the
@@ -198,6 +230,17 @@ public abstract class ProcessEngineConfiguration {
   protected boolean authorizationEnabled = false;
 
   /**
+   * Provides the default task permission for the user related to a task
+   * User can be related to a task in the following ways
+   * - Candidate user
+   * - Part of candidate group
+   * - Assignee
+   * - Owner
+   * The default value is UPDATE.
+   */
+  protected String defaultUserPermissionNameForTask = "UPDATE";
+
+  /**
    * <p>The following flag <code>authorizationEnabledForCustomCode</code> will
    * only be taken into account iff <code>authorizationEnabled</code> is set
    * <code>true</code>.</p>
@@ -211,7 +254,16 @@ public abstract class ProcessEngineConfiguration {
    */
   protected boolean authorizationEnabledForCustomCode = false;
 
+  /**
+   * If the value of this flag is set <code>true</code> then the process engine
+   * performs tenant checks to ensure that an authenticated user can only access
+   * data that belongs to one of his tenants.
+   */
+  protected boolean tenantCheckEnabled = true;
+
   protected ValueTypeResolver valueTypeResolver;
+
+  protected String authorizationCheckRevokes = AUTHORIZATION_CHECK_REVOKE_AUTO;
 
   /** use one of the static createXxxx methods instead */
   protected ProcessEngineConfiguration() {
@@ -603,12 +655,30 @@ public abstract class ProcessEngineConfiguration {
     return this;
   }
 
+  public String getDefaultUserPermissionNameForTask() {
+    return defaultUserPermissionNameForTask;
+  }
+
+  public ProcessEngineConfiguration setDefaultUserPermissionNameForTask(String defaultUserPermissionNameForTask) {
+    this.defaultUserPermissionNameForTask = defaultUserPermissionNameForTask;
+    return this;
+  }
+
   public boolean isAuthorizationEnabledForCustomCode() {
     return authorizationEnabledForCustomCode;
   }
 
   public ProcessEngineConfiguration setAuthorizationEnabledForCustomCode(boolean authorizationEnabledForCustomCode) {
     this.authorizationEnabledForCustomCode = authorizationEnabledForCustomCode;
+    return this;
+  }
+
+  public boolean isTenantCheckEnabled() {
+    return tenantCheckEnabled;
+  }
+
+  public ProcessEngineConfiguration setTenantCheckEnabled(boolean isTenantCheckEnabled) {
+    this.tenantCheckEnabled = isTenantCheckEnabled;
     return this;
   }
 
@@ -645,4 +715,19 @@ public abstract class ProcessEngineConfiguration {
     this.jobExecutorAcquireByPriority = jobExecutorAcquireByPriority;
   }
 
+  public boolean isProducePrioritizedExternalTasks() {
+    return producePrioritizedExternalTasks;
+  }
+
+  public void setProducePrioritizedExternalTasks(boolean producePrioritizedExternalTasks) {
+    this.producePrioritizedExternalTasks = producePrioritizedExternalTasks;
+  }
+
+  public void setAuthorizationCheckRevokes(String authorizationCheckRevokes) {
+    this.authorizationCheckRevokes = authorizationCheckRevokes;
+  }
+
+  public String getAuthorizationCheckRevokes() {
+    return authorizationCheckRevokes;
+  }
 }

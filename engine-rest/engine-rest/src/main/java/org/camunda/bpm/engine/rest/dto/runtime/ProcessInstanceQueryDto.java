@@ -69,6 +69,7 @@ public class ProcessInstanceQueryDto extends AbstractQueryDto<ProcessInstanceQue
   private String incidentMessageLike;
   private List<String> tenantIds;
   private Boolean withoutTenantId;
+  private List<String> activityIds;
 
   private List<VariableQueryParameterDto> variables;
 
@@ -80,8 +81,8 @@ public class ProcessInstanceQueryDto extends AbstractQueryDto<ProcessInstanceQue
     super(objectMapper, queryParameters);
   }
 
-  public String getProcessDefinitionKey() {
-    return processDefinitionKey;
+  public Set<String> getProcessInstanceIds() {
+    return processInstanceIds;
   }
 
   @CamundaQueryParam(value = "processInstanceIds", converter = StringSetConverter.class)
@@ -89,9 +90,17 @@ public class ProcessInstanceQueryDto extends AbstractQueryDto<ProcessInstanceQue
 		this.processInstanceIds = processInstanceIds;
   }
 
+  public String getDeploymentId() {
+    return deploymentId;
+  }
+
   @CamundaQueryParam("deploymentId")
   public void setDeploymentId(String deploymentId) {
     this.deploymentId = deploymentId;
+  }
+
+  public String getProcessDefinitionKey() {
+    return processDefinitionKey;
   }
 
   @CamundaQueryParam("processDefinitionKey")
@@ -99,9 +108,17 @@ public class ProcessInstanceQueryDto extends AbstractQueryDto<ProcessInstanceQue
     this.processDefinitionKey = processDefinitionKey;
   }
 
+  public String getBusinessKey() {
+    return businessKey;
+  }
+
   @CamundaQueryParam("businessKey")
   public void setBusinessKey(String businessKey) {
     this.businessKey = businessKey;
+  }
+
+  public String getCaseInstanceId() {
+    return caseInstanceId;
   }
 
   @CamundaQueryParam("caseInstanceId")
@@ -109,9 +126,17 @@ public class ProcessInstanceQueryDto extends AbstractQueryDto<ProcessInstanceQue
     this.caseInstanceId = caseInstanceId;
   }
 
+  public String getProcessDefinitionId() {
+    return processDefinitionId;
+  }
+
   @CamundaQueryParam("processDefinitionId")
   public void setProcessDefinitionId(String processDefinitionId) {
     this.processDefinitionId = processDefinitionId;
+  }
+
+  public String getSuperProcessInstance() {
+    return superProcessInstance;
   }
 
   @CamundaQueryParam("superProcessInstance")
@@ -119,9 +144,17 @@ public class ProcessInstanceQueryDto extends AbstractQueryDto<ProcessInstanceQue
     this.superProcessInstance = superProcessInstance;
   }
 
+  public String getSubProcessInstance() {
+    return subProcessInstance;
+  }
+
   @CamundaQueryParam("subProcessInstance")
   public void setSubProcessInstance(String subProcessInstance) {
     this.subProcessInstance = subProcessInstance;
+  }
+
+  public String getSuperCaseInstance() {
+    return superCaseInstance;
   }
 
   @CamundaQueryParam("superCaseInstance")
@@ -129,9 +162,17 @@ public class ProcessInstanceQueryDto extends AbstractQueryDto<ProcessInstanceQue
     this.superCaseInstance = superCaseInstance;
   }
 
+  public String getSubCaseInstance() {
+    return subCaseInstance;
+  }
+
   @CamundaQueryParam("subCaseInstance")
   public void setSubCaseInstance(String subCaseInstance) {
     this.subCaseInstance = subCaseInstance;
+  }
+
+  public Boolean isActive() {
+    return active;
   }
 
   @CamundaQueryParam(value = "active", converter = BooleanConverter.class)
@@ -139,9 +180,17 @@ public class ProcessInstanceQueryDto extends AbstractQueryDto<ProcessInstanceQue
     this.active = active;
   }
 
+  public Boolean isSuspended() {
+    return suspended;
+  }
+
   @CamundaQueryParam(value = "suspended", converter = BooleanConverter.class)
   public void setSuspended(Boolean suspended) {
     this.suspended = suspended;
+  }
+
+  public List<VariableQueryParameterDto> getVariables() {
+    return variables;
   }
 
   @CamundaQueryParam(value = "variables", converter = VariableListConverter.class)
@@ -149,9 +198,17 @@ public class ProcessInstanceQueryDto extends AbstractQueryDto<ProcessInstanceQue
     this.variables = variables;
   }
 
+  public String getIncidentId() {
+    return incidentId;
+  }
+
   @CamundaQueryParam(value = "incidentId")
   public void setIncidentId(String incidentId) {
     this.incidentId = incidentId;
+  }
+
+  public String getIncidentType() {
+    return incidentType;
   }
 
   @CamundaQueryParam(value = "incidentType")
@@ -159,9 +216,17 @@ public class ProcessInstanceQueryDto extends AbstractQueryDto<ProcessInstanceQue
     this.incidentType = incidentType;
   }
 
+  public String getIncidentMessage() {
+    return incidentMessage;
+  }
+
   @CamundaQueryParam(value = "incidentMessage")
   public void setIncidentMessage(String incidentMessage) {
     this.incidentMessage = incidentMessage;
+  }
+
+  public String getIncidentMessageLike() {
+    return incidentMessageLike;
   }
 
   @CamundaQueryParam(value = "incidentMessageLike")
@@ -169,14 +234,31 @@ public class ProcessInstanceQueryDto extends AbstractQueryDto<ProcessInstanceQue
     this.incidentMessageLike = incidentMessageLike;
   }
 
+  public List<String> getTenantIdIn() {
+    return tenantIds;
+  }
+
   @CamundaQueryParam(value = "tenantIdIn", converter = StringListConverter.class)
   public void setTenantIdIn(List<String> tenantIds) {
     this.tenantIds = tenantIds;
   }
 
+  public Boolean isWithoutTenantId() {
+    return withoutTenantId;
+  }
+
   @CamundaQueryParam(value = "withoutTenantId", converter = BooleanConverter.class)
   public void setWithoutTenantId(Boolean withoutTenantId) {
     this.withoutTenantId = withoutTenantId;
+  }
+
+  public List<String> getActivityIds() {
+    return activityIds;
+  }
+
+  @CamundaQueryParam(value = "activityIdIn", converter = StringListConverter.class)
+  public void setActivityIdIn(List<String> activityIds) {
+    this.activityIds = activityIds;
   }
 
   @Override
@@ -245,6 +327,9 @@ public class ProcessInstanceQueryDto extends AbstractQueryDto<ProcessInstanceQue
     }
     if (TRUE.equals(withoutTenantId)) {
       query.withoutTenantId();
+    }
+    if (activityIds != null && !activityIds.isEmpty()) {
+      query.activityIdIn(activityIds.toArray(new String[activityIds.size()]));
     }
     if (variables != null) {
       for (VariableQueryParameterDto variableQueryParam : variables) {

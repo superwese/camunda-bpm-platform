@@ -25,7 +25,7 @@ public class Error {
   
   protected String id;
   protected String errorCode;
-  
+
   public String getId() {
     return id;
   }
@@ -41,5 +41,5 @@ public class Error {
   public void setErrorCode(String errorCode) {
     this.errorCode = errorCode;
   }
-  
+
 }

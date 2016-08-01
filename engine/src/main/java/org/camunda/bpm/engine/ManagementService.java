@@ -22,6 +22,9 @@ import org.camunda.bpm.application.ProcessApplicationRegistration;
 import org.camunda.bpm.engine.authorization.Groups;
 import org.camunda.bpm.engine.authorization.Permissions;
 import org.camunda.bpm.engine.authorization.Resources;
+import org.camunda.bpm.engine.batch.Batch;
+import org.camunda.bpm.engine.batch.BatchQuery;
+import org.camunda.bpm.engine.batch.BatchStatisticsQuery;
 import org.camunda.bpm.engine.impl.jobexecutor.JobExecutor;
 import org.camunda.bpm.engine.management.ActivityStatisticsQuery;
 import org.camunda.bpm.engine.management.DeploymentStatisticsQuery;
@@ -32,6 +35,10 @@ import org.camunda.bpm.engine.management.ProcessDefinitionStatisticsQuery;
 import org.camunda.bpm.engine.management.TableMetaData;
 import org.camunda.bpm.engine.management.TablePage;
 import org.camunda.bpm.engine.management.TablePageQuery;
+import org.camunda.bpm.engine.management.UpdateJobDefinitionSuspensionStateBuilder;
+import org.camunda.bpm.engine.management.UpdateJobDefinitionSuspensionStateSelectBuilder;
+import org.camunda.bpm.engine.management.UpdateJobSuspensionStateBuilder;
+import org.camunda.bpm.engine.management.UpdateJobSuspensionStateSelectBuilder;
 import org.camunda.bpm.engine.runtime.Execution;
 import org.camunda.bpm.engine.runtime.Incident;
 import org.camunda.bpm.engine.runtime.Job;
@@ -82,7 +89,6 @@ public interface ManagementService {
    *          the Id of the deployment to deactivate
    * @param removeProcessDefinitionsFromCache
    *          indicates whether the process definitions should be removed from the deployment cache
-   * @return true if the registration was cleared
    *
    * @throws AuthorizationException
    *          If the user is not a member of the group {@link Groups#CAMUNDA_ADMIN}.
@@ -98,7 +104,6 @@ public interface ManagementService {
    *          the Ids of the deployments to deactivate
    * @param removeProcessDefinitionsFromCache
    *          indicates whether the process definitions should be removed from the deployment cache
-   * @return true if the registration was cleared
    *
    * @throws AuthorizationException
    *          If the user is not a member of the group {@link Groups#CAMUNDA_ADMIN}.
@@ -198,6 +203,8 @@ public interface ManagementService {
    * will be <strong>not</strong> activated.
    * </p>
    *
+   * <p>Note: for more complex activate commands use {@link #updateJobDefinitionSuspensionState()}.</p>
+   *
    * @throws ProcessEngineException
    *          If the job definition id is equal null.
    * @throws AuthorizationException
@@ -216,6 +223,8 @@ public interface ManagementService {
    * will be <strong>not</strong> activated.
    * </p>
    *
+   * <p>Note: for more complex activate commands use {@link #updateJobDefinitionSuspensionState()}.</p>
+   *
    * @throws ProcessEngineException
    *          If the process definition id is equal null.
    * @throws AuthorizationException
@@ -233,6 +242,8 @@ public interface ManagementService {
    * will be <strong>not</strong> activated.
    * </p>
    *
+   * <p>Note: for more complex activate commands use {@link #updateJobDefinitionSuspensionState()}.</p>
+   *
    * @throws ProcessEngineException
    *          If the process definition key is equal null.
    * @throws AuthorizationException
@@ -244,6 +255,8 @@ public interface ManagementService {
 
   /**
    * <p>Activates the {@link JobDefinition} with the given id immediately.</p>
+   *
+   * <p>Note: for more complex activate commands use {@link #updateJobDefinitionSuspensionState()}.</p>
    *
    * @param activateJobs If true, all the {@link Job}s of the provided job definition
    *                     will be activated too.
@@ -269,6 +282,8 @@ public interface ManagementService {
   /**
    * <p>Activates all {@link JobDefinition}s of the provided process definition id immediately.</p>
    *
+   * <p>Note: for more complex activate commands use {@link #updateJobDefinitionSuspensionState()}.</p>
+   *
    * @param activateJobs If true, all the {@link Job}s of the provided job definition
    *                     will be activated too.
    *
@@ -292,6 +307,8 @@ public interface ManagementService {
   /**
    * <p>Activates all {@link JobDefinition}s of the provided process definition key immediately.</p>
    *
+   * <p>Note: for more complex activate commands use {@link #updateJobDefinitionSuspensionState()}.</p>
+   *
    * @param activateJobs If true, all the {@link Job}s of the provided job definition
    *                     will be activated too.
    *
@@ -314,6 +331,8 @@ public interface ManagementService {
 
   /**
    * Activates the {@link JobDefinition} with the given id.
+   *
+   * <p>Note: for more complex activate commands use {@link #updateJobDefinitionSuspensionState()}.</p>
    *
    * @param activateJobs If true, all the {@link Job}s of the provided job definition
    *                     will be activated too.
@@ -343,6 +362,8 @@ public interface ManagementService {
   /**
    * <p>Activates all {@link JobDefinition}s of the provided process definition id.</p>
    *
+   * <p>Note: for more complex activate commands use {@link #updateJobDefinitionSuspensionState()}.</p>
+   *
    * @param activateJobs If true, all the {@link Job}s of the provided job definition
    *                     will be activated too.
    *
@@ -369,6 +390,8 @@ public interface ManagementService {
 
   /**
    * <p>Activates all {@link JobDefinition}s of the provided process definition key.</p>
+   *
+   * <p>Note: for more complex activate commands use {@link #updateJobDefinitionSuspensionState()}.</p>
    *
    * @param activateJobs If true, all the {@link Job}s of the provided job definition
    *                     will be activated too.
@@ -397,6 +420,8 @@ public interface ManagementService {
   /**
    * <p>Suspends the {@link JobDefinition} with the given id immediately.</p>
    *
+   * <p>Note: for more complex suspend commands use {@link #updateJobDefinitionSuspensionState()}.</p>
+   *
    * <p>
    * <strong>Note:</strong> All {@link Job}s of the provided job definition
    * will be <strong>not</strong> suspended.
@@ -415,6 +440,8 @@ public interface ManagementService {
   /**
    * <p>Suspends all {@link JobDefinition} of the provided process definition id immediately.</p>
    *
+   * <p>Note: for more complex suspend commands use {@link #updateJobDefinitionSuspensionState()}.</p>
+   *
    * <p>
    * <strong>Note:</strong> All {@link Job}s of the provided job definition
    * will be <strong>not</strong> suspended.
@@ -432,6 +459,8 @@ public interface ManagementService {
   /**
    * <p>Suspends all {@link JobDefinition} of the provided process definition key immediately.</p>
    *
+   * <p>Note: for more complex suspend commands use {@link #updateJobDefinitionSuspensionState()}.</p>
+   *
    * <p>
    * <strong>Note:</strong> All {@link Job}s of the provided job definition
    * will be <strong>not</strong> suspended.
@@ -448,6 +477,8 @@ public interface ManagementService {
 
   /**
    * Suspends the {@link JobDefinition} with the given id immediately.
+   *
+   * <p>Note: for more complex suspend commands use {@link #updateJobDefinitionSuspensionState()}.</p>
    *
    * @param suspendJobs If true, all the {@link Job}s of the provided job definition
    *                     will be suspended too.
@@ -473,6 +504,8 @@ public interface ManagementService {
   /**
    * Suspends all {@link JobDefinition}s of the provided process definition id immediately.
    *
+   * <p>Note: for more complex suspend commands use {@link #updateJobDefinitionSuspensionState()}.</p>
+   *
    * @param suspendJobs If true, all the {@link Job}s of the provided job definition
    *                     will be suspended too.
    *
@@ -496,6 +529,8 @@ public interface ManagementService {
   /**
    * Suspends all {@link JobDefinition}s of the provided process definition key immediately.
    *
+   * <p>Note: for more complex suspend commands use {@link #updateJobDefinitionSuspensionState()}.</p>
+   *
    * @param suspendJobs If true, all the {@link Job}s of the provided job definition
    *                     will be suspended too.
    *
@@ -518,6 +553,8 @@ public interface ManagementService {
 
   /**
    * Suspends the {@link JobDefinition} with the given id.
+   *
+   * <p>Note: for more complex suspend commands use {@link #updateJobDefinitionSuspensionState()}.</p>
    *
    * @param suspendJobs If true, all the {@link Job}s of the provided job definition
    *                     will be suspended too.
@@ -547,6 +584,8 @@ public interface ManagementService {
   /**
    * Suspends all {@link JobDefinition}s of the provided process definition id.
    *
+   * <p>Note: for more complex suspend commands use {@link #updateJobDefinitionSuspensionState()}.</p>
+   *
    * @param suspendJobs If true, all the {@link Job}s of the provided job definition
    *                     will be suspended too.
    *
@@ -573,6 +612,8 @@ public interface ManagementService {
 
   /**
    * Suspends all {@link JobDefinition}s of the provided process definition key.
+   *
+   * <p>Note: for more complex suspend commands use {@link #updateJobDefinitionSuspensionState()}.</p>
    *
    * @param suspendJobs If true, all the {@link Job}s of the provided job definition
    *                     will be suspended too.
@@ -601,6 +642,8 @@ public interface ManagementService {
   /**
    * <p>Activates the {@link Job} with the given id.</p>
    *
+   * <p>Note: for more complex activate commands use {@link #updateJobSuspensionState()}.</p>
+   *
    * @throws ProcessEngineException
    *          If the job id is equal null.
    * @throws AuthorizationException
@@ -611,6 +654,8 @@ public interface ManagementService {
 
   /**
    * <p>Activates all {@link Job}s of the provided job definition id.</p>
+   *
+   * <p>Note: for more complex activate commands use {@link #updateJobSuspensionState()}.</p>
    *
    * @throws ProcessEngineException
    *          If the job definition id is equal null.
@@ -623,6 +668,8 @@ public interface ManagementService {
   /**
    * <p>Activates all {@link Job}s of the provided process instance id.</p>
    *
+   * <p>Note: for more complex activate commands use {@link #updateJobSuspensionState()}.</p>
+   *
    * @throws ProcessEngineException
    *          If the process instance id is equal null.
    * @throws AuthorizationException
@@ -633,6 +680,8 @@ public interface ManagementService {
 
   /**
    * <p>Activates all {@link Job}s of the provided process definition id.</p>
+   *
+   * <p>Note: for more complex activate commands use {@link #updateJobSuspensionState()}.</p>
    *
    * @throws ProcessEngineException
    *          If the process definition id is equal null.
@@ -645,6 +694,8 @@ public interface ManagementService {
   /**
    * <p>Activates {@link Job}s of the provided process definition key.</p>
    *
+   * <p>Note: for more complex activate commands use {@link #updateJobSuspensionState()}.</p>
+   *
    * @throws ProcessEngineException
    *          If the process definition key is equal null.
    * @throws AuthorizationException
@@ -655,6 +706,8 @@ public interface ManagementService {
 
   /**
    * <p>Suspends the {@link Job} with the given id.</p>
+   *
+   * <p>Note: for more complex suspend commands use {@link #updateJobSuspensionState()}.</p>
    *
    * @throws ProcessEngineException
    *          If the job id is equal null.
@@ -667,6 +720,8 @@ public interface ManagementService {
   /**
    * <p>Suspends all {@link Job}s of the provided job definition id.</p>
    *
+   * <p>Note: for more complex suspend commands use {@link #updateJobSuspensionState()}.</p>
+   *
    * @throws ProcessEngineException
    *          If the job definition id is equal null.
    * @throws AuthorizationException
@@ -677,6 +732,8 @@ public interface ManagementService {
 
   /**
    * <p>Suspends all {@link Job}s of the provided process instance id.</p>
+   *
+   * <p>Note: for more complex suspend commands use {@link #updateJobSuspensionState()}.</p>
    *
    * @throws ProcessEngineException
    *          If the process instance id is equal null.
@@ -689,6 +746,8 @@ public interface ManagementService {
   /**
    * <p>Suspends all {@link Job}s of the provided process definition id.</p>
    *
+   * <p>Note: for more complex suspend commands use {@link #updateJobSuspensionState()}.</p>
+   *
    * @throws ProcessEngineException
    *          If the process definition id is equal null.
    * @throws AuthorizationException
@@ -698,7 +757,9 @@ public interface ManagementService {
   void suspendJobByProcessDefinitionId(String processDefinitionId);
 
   /**
-   * <p>Activates {@link Job}s of the provided process definition key.</p>
+   * <p>Suspends {@link Job}s of the provided process definition key.</p>
+   *
+   * <p>Note: for more complex suspend commands use {@link #updateJobSuspensionState()}.</p>
    *
    * @throws ProcessEngineException
    *          If the process definition key is equal null.
@@ -707,6 +768,27 @@ public interface ManagementService {
    *          or no {@link Permissions#UPDATE_INSTANCE} permission on {@link Resources#PROCESS_DEFINITION}.
    */
   void suspendJobByProcessDefinitionKey(String processDefinitionKey);
+
+  /**
+   * Activate or suspend jobs using a fluent builder. Specify the jobs by
+   * calling one of the <i>by</i> methods, like <i>byJobId</i>. To update the
+   * suspension state call {@link UpdateJobSuspensionStateBuilder#activate()} or
+   * {@link UpdateJobSuspensionStateBuilder#suspend()}.
+   *
+   * @return the builder to update the suspension state
+   */
+  UpdateJobSuspensionStateSelectBuilder updateJobSuspensionState();
+
+  /**
+   * Activate or suspend job definitions using a fluent builder. Specify the job
+   * definitions by calling one of the <i>by</i> methods, like
+   * <i>byJobDefinitionId</i>. To update the suspension state call
+   * {@link UpdateJobDefinitionSuspensionStateBuilder#activate()} or
+   * {@link UpdateJobDefinitionSuspensionStateBuilder#suspend()}.
+   *
+   * @return the builder to update the suspension state
+   */
+  UpdateJobDefinitionSuspensionStateSelectBuilder updateJobDefinitionSuspensionState();
 
   /**
    * Sets the number of retries that a job has left.
@@ -743,7 +825,7 @@ public interface ManagementService {
    * the corresponding incident will be resolved.
    * </p>
    *
-   * @param jobdefinitionId id of the job definition, cannot be null.
+   * @param jobDefinitionId id of the job definition, cannot be null.
    * @param retries number of retries.
    *
    * @throws AuthorizationException
@@ -981,5 +1063,70 @@ public interface ManagementService {
    * reporter is deactivated
    */
   void reportDbMetricsNow();
+
+  /**
+   * Creates a query to search for {@link org.camunda.bpm.engine.batch.Batch} instances.
+   *
+   * @since 7.5
+   */
+  BatchQuery createBatchQuery();
+
+  /**
+   * <p>
+   *   Suspends the {@link Batch} with the given id immediately.
+   * </p>
+   *
+   * <p>
+   *   <strong>Note:</strong> All {@link JobDefinition}s and {@link Job}s
+   *   related to the provided batch will be suspended.
+   * </p>
+   *
+   * @throws BadUserRequestException
+   *          If no such batch can be found.
+   * @throws AuthorizationException
+   *          If the user has no {@link Permissions#UPDATE} permission on {@link Resources#BATCH}.
+   *
+   * @since 7.5
+   */
+  void suspendBatchById(String batchId);
+
+  /**
+   * <p>
+   *   Activates the {@link Batch} with the given id immediately.
+   * </p>
+   *
+   * <p>
+   *   <strong>Note:</strong> All {@link JobDefinition}s and {@link Job}s
+   *   related to the provided batch will be activated.
+   * </p>
+   *
+   * @throws BadUserRequestException
+   *          If no such batch can be found.
+   * @throws AuthorizationException
+   *          If the user has no {@link Permissions#UPDATE} permission on {@link Resources#BATCH}.
+   *
+   * @since 7.5
+   */
+  void activateBatchById(String batchId);
+
+  /**
+   * Deletes a batch instance and the corresponding job definitions.
+   *
+   * If cascade is set to true the historic batch instances and the
+   * historic jobs logs are also removed.
+   *
+   * @throws AuthorizationException
+   *          If the user has no {@link Permissions#DELETE} permission on {@link Resources#BATCH}
+   *
+   * @since 7.5
+   */
+  void deleteBatch(String batchId, boolean cascade);
+
+  /**
+   * Query for the statistics of the batch execution jobs of a batch.
+   *
+   * @since 7.5
+   */
+  BatchStatisticsQuery createBatchStatisticsQuery();
 
 }

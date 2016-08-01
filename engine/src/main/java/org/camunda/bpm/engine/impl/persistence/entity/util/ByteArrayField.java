@@ -15,6 +15,7 @@ package org.camunda.bpm.engine.impl.persistence.entity.util;
 
 import org.camunda.bpm.engine.impl.context.Context;
 import org.camunda.bpm.engine.impl.persistence.entity.ByteArrayEntity;
+import org.camunda.bpm.engine.impl.persistence.entity.Nameable;
 import org.camunda.bpm.engine.impl.variable.serializer.ValueFields;
 
 /**
@@ -28,10 +29,10 @@ public class ByteArrayField {
   protected ByteArrayEntity byteArrayValue;
   protected String byteArrayId;
 
-  protected final ValueFields valueFields;
+  protected final Nameable nameProvider;
 
-  public ByteArrayField(ValueFields valueFields) {
-    this.valueFields = valueFields;
+  public ByteArrayField(Nameable nameProvider) {
+    this.nameProvider = nameProvider;
   }
 
   public String getByteArrayId() {
@@ -55,6 +56,7 @@ public class ByteArrayField {
   }
 
   protected ByteArrayEntity getByteArrayEntity() {
+
     if (byteArrayValue == null) {
       if (byteArrayId != null) {
         // no lazy fetching outside of command context
@@ -81,7 +83,7 @@ public class ByteArrayField {
       else {
         deleteByteArrayValue();
 
-        byteArrayValue = new ByteArrayEntity(valueFields.getName(), bytes);
+        byteArrayValue = new ByteArrayEntity(nameProvider.getName(), bytes);
         Context.
           getCommandContext()
           .getDbEntityManager()
@@ -102,10 +104,11 @@ public class ByteArrayField {
       // but should be checked and docked here (or removed if it turns out to be unnecessary)
       getByteArrayEntity();
 
-      Context
-        .getCommandContext()
-        .getByteArrayManager()
-        .deleteByteArrayById(this.byteArrayId);
+      if (byteArrayValue != null) {
+        Context.getCommandContext()
+               .getDbEntityManager()
+               .delete(byteArrayValue);
+      }
 
       byteArrayId = null;
     }

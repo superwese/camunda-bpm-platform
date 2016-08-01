@@ -28,11 +28,13 @@ public class CmmnSentryDeclaration implements Serializable {
 
   public static final String PLAN_ITEM_ON_PART = "planItemOnPart";
   public static final String IF_PART = "ifPart";
+  public static final String VARIABLE_ON_PART = "variableOnPart";
 
   protected String id;
 
   protected Map<String, List<CmmnOnPartDeclaration>> onPartMap = new HashMap<String, List<CmmnOnPartDeclaration>>();
   protected List<CmmnOnPartDeclaration> onParts = new ArrayList<CmmnOnPartDeclaration>();
+  protected List<CmmnVariableOnPartDeclaration> variableOnParts = new ArrayList<CmmnVariableOnPartDeclaration>();
 
   protected CmmnIfPartDeclaration ifPart;
 
@@ -99,6 +101,25 @@ public class CmmnSentryDeclaration implements Serializable {
     onPartDeclarations.add(onPart);
     onParts.add(onPart);
 
+  }
+
+  // variableOnParts
+  public void addVariableOnParts(CmmnVariableOnPartDeclaration variableOnPartDeclaration) {
+    variableOnParts.add(variableOnPartDeclaration);
+  }
+
+  public boolean hasVariableOnPart(String variableEventName, String variableName) {
+    for(CmmnVariableOnPartDeclaration variableOnPartDeclaration: variableOnParts) {
+      if(variableOnPartDeclaration.getVariableEvent().equals(variableEventName) &&
+         variableOnPartDeclaration.getVariableName().equals(variableName)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public List<CmmnVariableOnPartDeclaration> getVariableOnParts() {
+    return variableOnParts;    
   }
 
   // ifPart //////////////////////////////////////////////////////////////////

@@ -54,10 +54,13 @@ public class JsonTaskQueryConverter extends JsonObjectConverter<TaskQuery> {
   public static final String INVOLVED_USER = "involvedUser";
   public static final String OWNER = "owner";
   public static final String UNASSIGNED = "unassigned";
+  public static final String ASSIGNED = "assigned";
   public static final String DELEGATION_STATE = "delegationState";
   public static final String CANDIDATE_USER = "candidateUser";
   public static final String CANDIDATE_GROUP = "candidateGroup";
   public static final String CANDIDATE_GROUPS = "candidateGroups";
+  public static final String WITH_CANDIDATE_GROUPS = "withCandidateGroups";
+  public static final String WITHOUT_CANDIDATE_GROUPS = "withoutCandidateGroups";
   public static final String INCLUDE_ASSIGNED_TASKS = "includeAssignedTasks";
   public static final String INSTANCE_ID = "instanceId";
   public static final String PROCESS_INSTANCE_ID = "processInstanceId";
@@ -101,6 +104,8 @@ public class JsonTaskQueryConverter extends JsonObjectConverter<TaskQuery> {
   public static final String PROCESS_VARIABLES = "processVariables";
   public static final String TASK_VARIABLES = "taskVariables";
   public static final String CASE_INSTANCE_VARIABLES = "caseInstanceVariables";
+  public static final String TENANT_IDS = "tenantIds";
+  public static final String WITHOUT_TENANT_ID = "withoutTenantId";
   public static final String ORDERING_PROPERTIES = "orderingProperties";
 
   /**
@@ -111,6 +116,7 @@ public class JsonTaskQueryConverter extends JsonObjectConverter<TaskQuery> {
 
   protected static JsonTaskQueryVariableValueConverter variableValueConverter = new JsonTaskQueryVariableValueConverter();
 
+  @Override
   public JSONObject toJsonObject(TaskQuery taskQuery) {
     JSONObject json = new JSONObject();
     TaskQueryImpl query = (TaskQueryImpl) taskQuery;
@@ -128,10 +134,13 @@ public class JsonTaskQueryConverter extends JsonObjectConverter<TaskQuery> {
     addField(json, INVOLVED_USER, query.getInvolvedUser());
     addField(json, OWNER, query.getOwner());
     addDefaultField(json, UNASSIGNED, false, query.isUnassigned());
+    addDefaultField(json, ASSIGNED, false, query.isAssigned());
     addField(json, DELEGATION_STATE, query.getDelegationStateString());
     addField(json, CANDIDATE_USER, query.getCandidateUser());
     addField(json, CANDIDATE_GROUP, query.getCandidateGroup());
     addListField(json, CANDIDATE_GROUPS, query.getCandidateGroupsInternal());
+    addDefaultField(json, WITH_CANDIDATE_GROUPS, false, query.isWithCandidateGroups());
+    addDefaultField(json, WITHOUT_CANDIDATE_GROUPS, false, query.isWithoutCandidateGroups());
     addField(json, INCLUDE_ASSIGNED_TASKS, query.isIncludeAssignedTasksInternal());
     addField(json, PROCESS_INSTANCE_ID, query.getProcessInstanceId());
     addField(json, EXECUTION_ID, query.getExecutionId());
@@ -160,7 +169,7 @@ public class JsonTaskQueryConverter extends JsonObjectConverter<TaskQuery> {
     addDefaultField(json, FOLLOW_UP_NULL_ACCEPTED, false, query.isFollowUpNullAccepted());
     addDateField(json, FOLLOW_UP_AFTER, query.getFollowUpAfter());
     addDefaultField(json, EXCLUDE_SUBTASKS, false, query.isExcludeSubtasks());
-    addSuspensionState(json, query.getSuspensionState());
+    addSuspensionStateField(json, query.getSuspensionState());
     addField(json, CASE_DEFINITION_KEY, query.getCaseDefinitionKey());
     addField(json, CASE_DEFINITION_ID, query.getCaseDefinitionId());
     addField(json, CASE_DEFINITION_NAME, query.getCaseDefinitionName());
@@ -169,6 +178,8 @@ public class JsonTaskQueryConverter extends JsonObjectConverter<TaskQuery> {
     addField(json, CASE_INSTANCE_BUSINESS_KEY, query.getCaseInstanceBusinessKey());
     addField(json, CASE_INSTANCE_BUSINESS_KEY_LIKE, query.getCaseInstanceBusinessKeyLike());
     addField(json, CASE_EXECUTION_ID, query.getCaseExecutionId());
+    addTenantIdFields(json, query);
+
     if (query.getOrderingProperties() != null && !query.getOrderingProperties().isEmpty()) {
       addField(json, ORDERING_PROPERTIES,
           JsonQueryOrderingPropertyConverter.ARRAY_CONVERTER.toJsonArray(query.getOrderingProperties()));
@@ -183,13 +194,23 @@ public class JsonTaskQueryConverter extends JsonObjectConverter<TaskQuery> {
     return json;
   }
 
-  private void addSuspensionState(JSONObject json, SuspensionState suspensionState) {
+  protected void addSuspensionStateField(JSONObject json, SuspensionState suspensionState) {
     if (suspensionState != null) {
       if (suspensionState.equals(SuspensionState.ACTIVE)) {
         json.put(ACTIVE, true);
       }
       else if (suspensionState.equals(SuspensionState.SUSPENDED)) {
         json.put(SUSPENDED, true);
+      }
+    }
+  }
+
+  protected void addTenantIdFields(JSONObject json, TaskQueryImpl query) {
+    if (query.isTenantIdSet()) {
+      if (query.getTenantIds() != null) {
+        addArrayField(json, TENANT_IDS, query.getTenantIds());
+      } else {
+        addField(json, WITHOUT_TENANT_ID, true);
       }
     }
   }
@@ -221,6 +242,7 @@ public class JsonTaskQueryConverter extends JsonObjectConverter<TaskQuery> {
     array.put(variableValueConverter.toJsonObject(variable));
   }
 
+  @Override
   public TaskQuery toObject(JSONObject json) {
     TaskQueryImpl query = new TaskQueryImpl();
 
@@ -260,8 +282,11 @@ public class JsonTaskQueryConverter extends JsonObjectConverter<TaskQuery> {
     if (json.has(OWNER)) {
       query.taskOwner(json.getString(OWNER));
     }
+    if (json.has(ASSIGNED) && json.getBoolean(ASSIGNED)) {
+      query.taskAssigned();
+    }
     if (json.has(UNASSIGNED) && json.getBoolean(UNASSIGNED)) {
-        query.taskUnassigned();
+      query.taskUnassigned();
     }
     if (json.has(DELEGATION_STATE)) {
       query.taskDelegationState(DelegationState.valueOf(json.getString(DELEGATION_STATE)));
@@ -274,6 +299,12 @@ public class JsonTaskQueryConverter extends JsonObjectConverter<TaskQuery> {
     }
     if (json.has(CANDIDATE_GROUPS) && !json.has(CANDIDATE_USER) && !json.has(CANDIDATE_GROUP)) {
       query.taskCandidateGroupIn(getList(json.getJSONArray(CANDIDATE_GROUPS)));
+    }
+    if (json.has(WITH_CANDIDATE_GROUPS) && json.getBoolean(WITH_CANDIDATE_GROUPS)) {
+      query.withCandidateGroups();
+    }
+    if (json.has(WITHOUT_CANDIDATE_GROUPS) && json.getBoolean(WITHOUT_CANDIDATE_GROUPS)) {
+      query.withoutCandidateGroups();
     }
     if (json.has(INCLUDE_ASSIGNED_TASKS) && json.getBoolean(INCLUDE_ASSIGNED_TASKS)) {
       query.includeAssignedTasksInternal();
@@ -394,6 +425,12 @@ public class JsonTaskQueryConverter extends JsonObjectConverter<TaskQuery> {
     }
     if (json.has(CASE_EXECUTION_ID)) {
       query.caseExecutionId(json.getString(CASE_EXECUTION_ID));
+    }
+    if (json.has(TENANT_IDS)) {
+      query.tenantIdIn(getArray(json.getJSONArray(TENANT_IDS)));
+    }
+    if (json.has(WITHOUT_TENANT_ID)) {
+      query.withoutTenantId();
     }
     if (json.has(ORDER_BY)) {
       List<QueryOrderingProperty> orderingProperties =

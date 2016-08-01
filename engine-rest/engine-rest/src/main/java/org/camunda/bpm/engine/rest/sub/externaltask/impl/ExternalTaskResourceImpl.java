@@ -29,6 +29,8 @@ import org.camunda.bpm.engine.rest.sub.externaltask.ExternalTaskResource;
 import org.camunda.bpm.engine.variable.VariableMap;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.camunda.bpm.engine.rest.dto.externaltask.ExternalTaskBpmnError;
+import org.camunda.bpm.engine.rest.dto.runtime.PriorityDto;
 
 /**
  * @author Thorben Lindhauer
@@ -62,11 +64,33 @@ public class ExternalTaskResourceImpl implements ExternalTaskResource {
   }
 
   @Override
+  public String getErrorDetails() {
+    ExternalTaskService externalTaskService = engine.getExternalTaskService();
+
+    try {
+      return externalTaskService.getExternalTaskErrorDetails(externalTaskId);
+    } catch (NotFoundException e) {
+      throw new RestException(Status.NOT_FOUND, e, "External task with id " + externalTaskId + " does not exist");
+    }
+  }
+
+  @Override
   public void setRetries(RetriesDto dto) {
     ExternalTaskService externalTaskService = engine.getExternalTaskService();
 
     try {
       externalTaskService.setRetries(externalTaskId, dto.getRetries());
+    } catch (NotFoundException e) {
+      throw new RestException(Status.NOT_FOUND, e, "External task with id " + externalTaskId + " does not exist");
+    }
+  }
+
+  @Override
+  public void setPriority(PriorityDto dto) {
+    ExternalTaskService externalTaskService = engine.getExternalTaskService();
+
+    try {
+      externalTaskService.setPriority(externalTaskId, dto.getPriority());
     } catch (NotFoundException e) {
       throw new RestException(Status.NOT_FOUND, e, "External task with id " + externalTaskId + " does not exist");
     }
@@ -96,6 +120,7 @@ public class ExternalTaskResourceImpl implements ExternalTaskResource {
       externalTaskService.handleFailure(externalTaskId,
           dto.getWorkerId(),
           dto.getErrorMessage(),
+          dto.getErrorDetails(),
           dto.getRetries(),
           dto.getRetryTimeout());
     } catch (NotFoundException e) {
@@ -103,7 +128,19 @@ public class ExternalTaskResourceImpl implements ExternalTaskResource {
     } catch (BadUserRequestException e) {
       throw new RestException(Status.BAD_REQUEST, e, e.getMessage());
     }
+  }
 
+  @Override
+  public void handleBpmnError(ExternalTaskBpmnError dto) {
+    ExternalTaskService externalTaskService = engine.getExternalTaskService();
+    
+    try {
+      externalTaskService.handleBpmnError(externalTaskId, dto.getWorkerId(), dto.getErrorCode());
+    } catch (NotFoundException e) {
+      throw new RestException(Status.NOT_FOUND, e, "External task with id " + externalTaskId + " does not exist");
+    } catch (BadUserRequestException e) {
+      throw new RestException(Status.BAD_REQUEST, e, e.getMessage());
+    }
   }
 
   @Override

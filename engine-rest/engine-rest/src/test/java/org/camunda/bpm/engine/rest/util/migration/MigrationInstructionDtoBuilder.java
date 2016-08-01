@@ -14,30 +14,41 @@
 package org.camunda.bpm.engine.rest.util.migration;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-import org.camunda.bpm.engine.rest.dto.migration.MigrationInstructionDto;
 
 public class MigrationInstructionDtoBuilder {
 
-  protected final MigrationInstructionDto migrationInstructionDto;
+  public static final String PROP_SOURCE_ACTIVITY_IDS = "sourceActivityIds";
+  public static final String PROP_TARGET_ACTIVITY_IDS = "targetActivityIds";
+  public static final String PROP_UPDATE_EVENT_TRIGGER = "updateEventTrigger";
+
+  protected final Map<String, Object> migrationInstruction;
 
   public MigrationInstructionDtoBuilder() {
-    migrationInstructionDto = new MigrationInstructionDto();
+    migrationInstruction = new HashMap<String, Object>();
   }
 
   public MigrationInstructionDtoBuilder migrate(String sourceActivityId, String targetActivityId) {
-    return migrate(Collections.singletonList(sourceActivityId), Collections.singletonList(targetActivityId));
+    return migrate(Collections.singletonList(sourceActivityId), Collections.singletonList(targetActivityId), null);
   }
 
-  public MigrationInstructionDtoBuilder migrate(List<String> sourceActivityId, List<String> targetActivityId) {
-    migrationInstructionDto.setSourceActivityIds(sourceActivityId);
-    migrationInstructionDto.setTargetActivityIds(targetActivityId);
+  public MigrationInstructionDtoBuilder migrate(String sourceActivityId, String targetActivityId, Boolean updateEventTrigger) {
+    return migrate(Collections.singletonList(sourceActivityId), Collections.singletonList(targetActivityId), updateEventTrigger);
+  }
+
+  public MigrationInstructionDtoBuilder migrate(List<String> sourceActivityId, List<String> targetActivityId, Boolean updateEventTrigger) {
+    migrationInstruction.put(PROP_SOURCE_ACTIVITY_IDS, sourceActivityId);
+    migrationInstruction.put(PROP_TARGET_ACTIVITY_IDS, targetActivityId);
+    migrationInstruction.put(PROP_UPDATE_EVENT_TRIGGER, updateEventTrigger);
+
     return this;
   }
 
-  public MigrationInstructionDto build() {
-    return migrationInstructionDto;
+  public Map<String, Object> build() {
+    return migrationInstruction;
   }
 
 }

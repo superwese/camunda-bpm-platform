@@ -18,8 +18,6 @@ import java.util.List;
 import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.authorization.Permission;
 import org.camunda.bpm.engine.authorization.Resource;
-import org.camunda.bpm.engine.impl.db.CompositePermissionCheck;
-import org.camunda.bpm.engine.impl.db.PermissionCheck;
 
 /**
  * @author Thorben Lindhauer
@@ -34,7 +32,6 @@ public class PermissionCheckBuilder {
   protected PermissionCheckBuilder parent;
 
   public PermissionCheckBuilder() {
-
   }
 
   public PermissionCheckBuilder(PermissionCheckBuilder parent) {
@@ -61,6 +58,16 @@ public class PermissionCheckBuilder {
     return this;
   }
 
+  public PermissionCheckBuilder atomicCheckForResourceId(Resource resource, String resourceId, Permission permission) {
+    PermissionCheck permCheck = new PermissionCheck();
+    permCheck.setResource(resource);
+    permCheck.setResourceId(resourceId);
+    permCheck.setPermission(permission);
+    this.atomicChecks.add(permCheck);
+
+    return this;
+  }
+
   public PermissionCheckBuilder composite() {
     return new PermissionCheckBuilder(this);
   }
@@ -78,6 +85,10 @@ public class PermissionCheckBuilder {
     permissionCheck.setCompositeChecks(compositeChecks);
 
     return permissionCheck;
+  }
+  
+  public List<PermissionCheck> getAtomicChecks() {
+    return atomicChecks;
   }
 
   protected void validate() {

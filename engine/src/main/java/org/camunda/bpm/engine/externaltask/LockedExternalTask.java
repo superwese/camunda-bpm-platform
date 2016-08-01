@@ -81,13 +81,22 @@ public interface LockedExternalTask {
   Integer getRetries();
 
   /**
-   * @return the error message submitted with the latest reported failure executing this task;
+   * @return the full error message submitted with the latest reported failure executing this task;
    *   <code>null</code> if no failure was reported previously or if no error message
    *   was submitted
    *
    * @see ExternalTaskService#handleFailure(String, String, String, int, long)
    */
   String getErrorMessage();
+
+  /**
+   * @return error details submitted with the latest reported failure executing this task;
+   *   <code>null</code> if no failure was reported previously or if no error details
+   *   was submitted
+   *
+   * @see ExternalTaskService#handleFailure(String, String, String, String, int, long)
+   */
+  String getErrorDetails();
 
   /**
    * @return a map of variables that contains an entry for every variable
@@ -101,5 +110,12 @@ public interface LockedExternalTask {
    * if the task belongs to no single tenant.
    */
   String getTenantId();
+  
+  /**
+   * Returns the priority of the locked external task.
+   * The default priority is 0.
+   * @return the priority of the external task
+   */
+  long getPriority();
 
 }

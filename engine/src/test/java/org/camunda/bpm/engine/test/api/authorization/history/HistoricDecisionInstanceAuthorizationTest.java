@@ -24,12 +24,15 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.camunda.bpm.engine.AuthorizationException;
+import org.camunda.bpm.engine.ProcessEngineConfiguration;
 import org.camunda.bpm.engine.history.HistoricDecisionInstanceQuery;
+import org.camunda.bpm.engine.test.RequiredHistoryLevel;
 import org.camunda.bpm.engine.test.api.authorization.AuthorizationTest;
 
 /**
  * @author Philipp Ossler
  */
+@RequiredHistoryLevel(ProcessEngineConfiguration.HISTORY_FULL)
 public class HistoricDecisionInstanceAuthorizationTest extends AuthorizationTest {
 
   protected static final String PROCESS_KEY = "testProcess";
@@ -77,6 +80,19 @@ public class HistoricDecisionInstanceAuthorizationTest extends AuthorizationTest
     // given
     startProcessInstanceAndEvaluateDecision();
     createGrantAuthorization(DECISION_DEFINITION, ANY, userId, READ_HISTORY);
+
+    // when
+    HistoricDecisionInstanceQuery query = historyService.createHistoricDecisionInstanceQuery();
+
+    // then
+    verifyQueryResults(query, 1);
+  }
+
+  public void testQueryWithMultiple() {
+    // given
+    startProcessInstanceAndEvaluateDecision();
+    createGrantAuthorization(DECISION_DEFINITION, ANY, userId, READ_HISTORY);
+    createGrantAuthorization(DECISION_DEFINITION, DECISION_DEFINITION_KEY, userId, READ_HISTORY);
 
     // when
     HistoricDecisionInstanceQuery query = historyService.createHistoricDecisionInstanceQuery();

@@ -14,44 +14,50 @@
 package org.camunda.bpm.engine.rest.util.migration;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-import org.camunda.bpm.engine.rest.dto.migration.MigrationInstructionDto;
-import org.camunda.bpm.engine.rest.dto.migration.MigrationPlanDto;
 
 public class MigrationPlanDtoBuilder {
 
-  protected final MigrationPlanDto migrationPlanDto;
+  public static final String PROP_SOURCE_PROCESS_DEFINITION_ID = "sourceProcessDefinitionId";
+  public static final String PROP_TARGET_PROCESS_DEFINITION_ID = "targetProcessDefinitionId";
+  public static final String PROP_INSTRUCTIONS = "instructions";
+
+  protected final Map<String, Object> migrationPlan;
 
   public MigrationPlanDtoBuilder(String sourceProcessDefinitionId, String targetProcessDefinitionId) {
-    migrationPlanDto = new MigrationPlanDto();
-    migrationPlanDto.setSourceProcessDefinitionId(sourceProcessDefinitionId);
-    migrationPlanDto.setTargetProcessDefinitionId(targetProcessDefinitionId);
+    migrationPlan = new HashMap<String, Object>();
+    migrationPlan.put(PROP_SOURCE_PROCESS_DEFINITION_ID, sourceProcessDefinitionId);
+    migrationPlan.put(PROP_TARGET_PROCESS_DEFINITION_ID, targetProcessDefinitionId);
   }
 
-  public MigrationPlanDtoBuilder instructions(List<MigrationInstructionDto> instructions) {
-    migrationPlanDto.setInstructions(instructions);
+  public MigrationPlanDtoBuilder instructions(List<Map<String, Object>> instructions) {
+    migrationPlan.put(PROP_INSTRUCTIONS, instructions);
     return this;
   }
 
   public MigrationPlanDtoBuilder instruction(String sourceActivityId, String targetActivityId) {
-    List<MigrationInstructionDto> instructions = migrationPlanDto.getInstructions();
+    return instruction(sourceActivityId, targetActivityId, null);
+  }
+
+  public MigrationPlanDtoBuilder instruction(String sourceActivityId, String targetActivityId, Boolean updateEventTrigger) {
+    List<Map<String, Object>> instructions = (List<Map<String, Object>>) migrationPlan.get(PROP_INSTRUCTIONS);
     if (instructions == null) {
-      instructions = new ArrayList<MigrationInstructionDto>();
-      migrationPlanDto.setInstructions(instructions);
+      instructions = new ArrayList<Map<String, Object>>();
+      migrationPlan.put(PROP_INSTRUCTIONS, instructions);
     }
 
-    MigrationInstructionDto migrationInstruction = new MigrationInstructionDtoBuilder()
-      .migrate(sourceActivityId, targetActivityId)
+    Map<String, Object> migrationInstruction = new MigrationInstructionDtoBuilder()
+      .migrate(sourceActivityId, targetActivityId, updateEventTrigger)
       .build();
 
     instructions.add(migrationInstruction);
     return this;
   }
 
-  public MigrationPlanDto build() {
-    return migrationPlanDto;
+  public Map<String, Object> build() {
+    return migrationPlan;
   }
-
 }

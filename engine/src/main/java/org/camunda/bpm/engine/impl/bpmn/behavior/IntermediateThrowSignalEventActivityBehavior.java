@@ -13,21 +13,15 @@
 
 package org.camunda.bpm.engine.impl.bpmn.behavior;
 
-import static org.camunda.bpm.engine.impl.util.EnsureUtil.ensureNotNull;
-
 import java.util.List;
 
 import org.camunda.bpm.engine.impl.ProcessEngineLogger;
 import org.camunda.bpm.engine.impl.bpmn.parser.EventSubscriptionDeclaration;
 import org.camunda.bpm.engine.impl.context.Context;
-import org.camunda.bpm.engine.impl.persistence.deploy.DeploymentCache;
 import org.camunda.bpm.engine.impl.persistence.entity.EventSubscriptionManager;
 import org.camunda.bpm.engine.impl.persistence.entity.ExecutionEntity;
-import org.camunda.bpm.engine.impl.persistence.entity.ProcessDefinitionEntity;
 import org.camunda.bpm.engine.impl.persistence.entity.SignalEventSubscriptionEntity;
-import org.camunda.bpm.engine.impl.pvm.PvmProcessInstance;
 import org.camunda.bpm.engine.impl.pvm.delegate.ActivityExecution;
-import org.camunda.bpm.engine.impl.pvm.process.ActivityImpl;
 
 
 /**
@@ -45,18 +39,30 @@ public class IntermediateThrowSignalEventActivityBehavior extends AbstractBpmnAc
 
   @Override
   public void execute(ActivityExecution execution) throws Exception {
-    final EventSubscriptionManager eventSubscriptionManager = Context.getCommandContext().getEventSubscriptionManager();
 
     // trigger all event subscriptions for the signal (start and intermediate)
-    List<SignalEventSubscriptionEntity> catchSignalEventSubscription = eventSubscriptionManager
-      .findSignalEventSubscriptionsByEventName(signalDefinition.getEventName());
-    for (SignalEventSubscriptionEntity signalEventSubscriptionEntity : catchSignalEventSubscription) {
-      if(isActiveEventSubscription(signalEventSubscriptionEntity)){
-        signalEventSubscriptionEntity.eventReceived(null, signalDefinition.isAsync());
+    List<SignalEventSubscriptionEntity> signalEventSubscriptions = findSignalEventSubscriptions(signalDefinition.getEventName(), execution.getTenantId());
+
+    for (SignalEventSubscriptionEntity signalEventSubscription : signalEventSubscriptions) {
+      if(isActiveEventSubscription(signalEventSubscription)){
+        signalEventSubscription.eventReceived(null, signalDefinition.isAsync());
       }
     }
 
     leave(execution);
+  }
+
+  protected List<SignalEventSubscriptionEntity> findSignalEventSubscriptions(String signalName, String tenantId) {
+    EventSubscriptionManager eventSubscriptionManager = Context.getCommandContext().getEventSubscriptionManager();
+
+    if(tenantId != null) {
+      return eventSubscriptionManager
+          .findSignalEventSubscriptionsByEventNameAndTenantIdIncludeWithoutTenantId(signalName, tenantId);
+
+    } else {
+      // find event subscriptions without tenant id
+      return eventSubscriptionManager.findSignalEventSubscriptionsByEventNameAndTenantId(signalName, null);
+    }
   }
 
   protected boolean isActiveEventSubscription(SignalEventSubscriptionEntity signalEventSubscriptionEntity) {
@@ -71,24 +77,6 @@ public class IntermediateThrowSignalEventActivityBehavior extends AbstractBpmnAc
   protected boolean isActiveIntermediateEventSubscription(SignalEventSubscriptionEntity signalEventSubscriptionEntity) {
     ExecutionEntity execution = signalEventSubscriptionEntity.getExecution();
     return execution != null && !execution.isEnded() && !execution.isCanceled();
-  }
-
-  protected void startProcessInstanceBySignal(SignalEventSubscriptionEntity eventSubscription) {
-    String processDefinitionId = eventSubscription.getConfiguration();
-    ensureNotNull("Configuration of signal start event subscription '" + eventSubscription.getId() + "' contains no process definition id.",
-        processDefinitionId);
-
-    DeploymentCache deploymentCache = Context.getProcessEngineConfiguration().getDeploymentCache();
-    ProcessDefinitionEntity processDefinition = deploymentCache.findDeployedProcessDefinitionById(processDefinitionId);
-    if (processDefinition == null || processDefinition.isSuspended()) {
-      // ignore event subscription
-      LOG.ignoringEventSubscription(eventSubscription, processDefinitionId);
-    } else {
-
-      ActivityImpl signalStartEvent = processDefinition.findActivity(eventSubscription.getActivityId());
-      PvmProcessInstance processInstance = processDefinition.createProcessInstanceForInitial(signalStartEvent);
-      processInstance.start();
-    }
   }
 
 }

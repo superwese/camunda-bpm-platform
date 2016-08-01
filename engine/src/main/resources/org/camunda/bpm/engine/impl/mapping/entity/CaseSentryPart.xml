@@ -17,7 +17,10 @@
       TYPE_,
       STANDARD_EVENT_,
       SATISFIED_,
-      SOURCE_
+      SOURCE_,
+      VARIABLE_EVENT_,
+      VARIABLE_NAME_,
+      TENANT_ID_
     )
     values
     (
@@ -29,7 +32,10 @@
       #{type, jdbcType=VARCHAR},
       #{standardEvent, jdbcType=VARCHAR},
       #{satisfied, jdbcType=BOOLEAN},
-      #{source, jdbcType=VARCHAR}
+      #{source, jdbcType=VARCHAR},
+      #{variableEvent, jdbcType=VARCHAR},
+      #{variableName, jdbcType=VARCHAR},
+      #{tenantId, jdbcType=VARCHAR}
     )
   </insert>
 
@@ -61,7 +67,10 @@
     <result property="sourceCaseExecutionId" column="SOURCE_CASE_EXEC_ID_" jdbcType="VARCHAR" />
     <result property="standardEvent" column="STANDARD_EVENT_" jdbcType="VARCHAR" />
     <result property="source" column="SOURCE_" jdbcType="VARCHAR" />
+    <result property="variableEvent" column="VARIABLE_EVENT_" jdbcType="VARCHAR" />
+    <result property="variableName" column="VARIABLE_NAME_" jdbcType="VARCHAR" />
     <result property="satisfied" column="SATISFIED_" jdbcType="BOOLEAN" />
+    <result property="tenantId" column="TENANT_ID_" jdbcType="VARCHAR"/>
   </resultMap>
 
   <!-- CASE SENTRY PART SELECT -->
@@ -79,7 +88,7 @@
   <select id="selectCaseSentryPartsByQueryCriteria" parameterType="org.camunda.bpm.engine.impl.cmmn.entity.runtime.CaseSentryPartQueryImpl" resultMap="caseSentryPartResultMap">
     <include refid="org.camunda.bpm.engine.impl.persistence.entity.Commons.bindOrderBy"/>
     ${limitBefore}
-    select RES.* 
+    select ${distinct} RES.* 
     ${limitBetween}
     <include refid="selectCaseSentryPartsByQueryCriteriaSql"/>
     ${orderBy}
@@ -87,7 +96,7 @@
   </select>
 
   <select id="selectCaseSentryPartsCountByQueryCriteria" parameterType="org.camunda.bpm.engine.impl.cmmn.entity.runtime.CaseSentryPartQueryImpl" resultType="long">
-    select count(*)
+    select count(distinct RES.ID_)
     <include refid="selectCaseSentryPartsByQueryCriteriaSql"/>
   </select>
 
@@ -127,6 +136,16 @@
       <!-- standardEvent -->
       <if test="standardEvent != null">
         and RES.STANDARD_EVENT_ = #{standardEvent}
+      </if>
+
+      <!-- variableEvent -->
+      <if test="variableEvent != null">
+        and RES.VARIABLE_EVENT_ = #{variableEvent}
+      </if>
+
+      <!-- variableName -->
+      <if test="variableName != null">
+        and RES.VARIABLE_NAME_ = #{variableName}
       </if>
 
       <!-- satisfied -->

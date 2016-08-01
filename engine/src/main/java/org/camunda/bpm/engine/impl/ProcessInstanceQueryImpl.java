@@ -17,9 +17,11 @@ import static org.camunda.bpm.engine.impl.util.EnsureUtil.ensureNotEmpty;
 import static org.camunda.bpm.engine.impl.util.EnsureUtil.ensureNotNull;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import org.camunda.bpm.engine.impl.context.Context;
 import org.camunda.bpm.engine.impl.interceptor.CommandContext;
 import org.camunda.bpm.engine.impl.interceptor.CommandExecutor;
 import org.camunda.bpm.engine.impl.persistence.entity.SuspensionState;
@@ -37,7 +39,7 @@ import org.camunda.bpm.engine.runtime.ProcessInstanceQuery;
 public class ProcessInstanceQueryImpl extends AbstractVariableQueryImpl<ProcessInstanceQuery, ProcessInstance> implements ProcessInstanceQuery, Serializable {
 
   private static final long serialVersionUID = 1L;
-  protected String executionId;
+  protected String processInstanceId;
   protected String businessKey;
   protected String processDefinitionId;
   protected Set<String> processInstanceIds;
@@ -53,13 +55,10 @@ public class ProcessInstanceQueryImpl extends AbstractVariableQueryImpl<ProcessI
   protected String caseInstanceId;
   protected String superCaseInstanceId;
   protected String subCaseInstanceId;
+  protected String[] activityIds;
 
   protected boolean isTenantIdSet = false;
   protected String[] tenantIds;
-
-  // Unused, see dynamic query
-  protected String activityId;
-  protected List<EventSubscriptionQueryValue> eventSubscriptions;
 
   public ProcessInstanceQueryImpl() {
   }
@@ -70,7 +69,7 @@ public class ProcessInstanceQueryImpl extends AbstractVariableQueryImpl<ProcessI
 
   public ProcessInstanceQueryImpl processInstanceId(String processInstanceId) {
     ensureNotNull("Process instance id", processInstanceId);
-    this.executionId = processInstanceId;
+    this.processInstanceId = processInstanceId;
     return this;
   }
 
@@ -208,6 +207,12 @@ public class ProcessInstanceQueryImpl extends AbstractVariableQueryImpl<ProcessI
     return this;
   }
 
+  public ProcessInstanceQuery activityIdIn(String... activityIds) {
+    ensureNotNull("activity ids", (Object[]) activityIds);
+    this.activityIds = activityIds;
+    return this;
+  }
+
   //results /////////////////////////////////////////////////////////////////
 
   @Override
@@ -225,17 +230,32 @@ public class ProcessInstanceQueryImpl extends AbstractVariableQueryImpl<ProcessI
     ensureVariablesInitialized();
     return commandContext
       .getExecutionManager()
-      .findProcessInstanceByQueryCriteria(this, page);
+      .findProcessInstancesByQueryCriteria(this, page);
+  }
+
+  public List<String> listIds() {
+    this.resultType = ResultType.LIST;
+    return evaluateExpressionsAndExecuteIdsList(Context.getCommandContext());
+  }
+
+  public List<String> evaluateExpressionsAndExecuteIdsList(CommandContext commandContext) {
+    validate();
+    evaluateExpressions();
+    return !hasExcludingConditions() ? executeIdsList(commandContext) : new ArrayList<String>();
+  }
+
+  public List<String> executeIdsList(CommandContext commandContext) {
+    checkQueryOk();
+    ensureVariablesInitialized();
+    return commandContext
+      .getExecutionManager()
+      .findProcessInstancesIdsByQueryCriteria(this);
   }
 
   //getters /////////////////////////////////////////////////////////////////
 
-  public boolean getOnlyProcessInstances() {
-    return true; // See dynamic query in runtime.mapping.xml
-  }
-
   public String getProcessInstanceId() {
-    return executionId;
+    return processInstanceId;
   }
 
   public Set<String> getProcessInstanceIds() {
@@ -258,10 +278,6 @@ public class ProcessInstanceQueryImpl extends AbstractVariableQueryImpl<ProcessI
     return deploymentId;
   }
 
-  public String getActivityId() {
-    return null; // Unused, see dynamic query
-  }
-
   public String getSuperProcessInstanceId() {
     return superProcessInstanceId;
   }
@@ -276,14 +292,6 @@ public class ProcessInstanceQueryImpl extends AbstractVariableQueryImpl<ProcessI
 
   public void setSuspensionState(SuspensionState suspensionState) {
     this.suspensionState = suspensionState;
-  }
-
-  public List<EventSubscriptionQueryValue> getEventSubscriptions() {
-    return eventSubscriptions;
-  }
-
-  public void setEventSubscriptions(List<EventSubscriptionQueryValue> eventSubscriptions) {
-    this.eventSubscriptions = eventSubscriptions;
   }
 
   public String getIncidentId() {

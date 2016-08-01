@@ -52,11 +52,21 @@ public class HistoricDecisionInstanceQueryImpl extends AbstractQuery<HistoricDec
   protected Date evaluatedBefore;
   protected Date evaluatedAfter;
 
+  protected String userId;
+
   protected boolean includeInput = false;
   protected boolean includeOutputs = false;
 
   protected boolean isByteArrayFetchingEnabled = true;
   protected boolean isCustomObjectDeserializationEnabled = true;
+
+  protected String rootDecisionInstanceId;
+  protected boolean rootDecisionInstancesOnly = false;
+
+  protected String decisionRequirementsDefinitionId;
+  protected String decisionRequirementsDefinitionKey;
+
+  protected String[] tenantIds;
 
   public HistoricDecisionInstanceQueryImpl() {
   }
@@ -164,6 +174,23 @@ public class HistoricDecisionInstanceQueryImpl extends AbstractQuery<HistoricDec
     return this;
   }
 
+  public HistoricDecisionInstanceQuery tenantIdIn(String... tenantIds) {
+    ensureNotNull("tenantIds", (Object[]) tenantIds);
+    this.tenantIds = tenantIds;
+    return this;
+  }
+
+  public HistoricDecisionInstanceQuery orderByTenantId() {
+    return orderBy(HistoricDecisionInstanceQueryProperty.TENANT_ID);
+  }
+
+  @Override
+  public HistoricDecisionInstanceQuery userId(String userId) {
+    ensureNotNull(NotValidException.class, "userId", userId);
+    this.userId = userId;
+    return this;
+  }
+
   @Override
   public HistoricDecisionInstanceQuery orderByEvaluationTime() {
     orderBy(HistoricDecisionInstanceQueryProperty.EVALUATION_TIME);
@@ -230,6 +257,10 @@ public class HistoricDecisionInstanceQueryImpl extends AbstractQuery<HistoricDec
     return activityIds;
   }
 
+  public String[] getTenantIds() {
+    return tenantIds;
+  }
+
   public HistoricDecisionInstanceQuery includeInputs() {
     includeInput = true;
     return this;
@@ -258,7 +289,7 @@ public class HistoricDecisionInstanceQueryImpl extends AbstractQuery<HistoricDec
   @Override
   public HistoricDecisionInstanceQuery disableCustomObjectDeserialization() {
     isCustomObjectDeserializationEnabled = false;
-    return null;
+    return this;
   }
 
   public boolean isByteArrayFetchingEnabled() {
@@ -267,5 +298,46 @@ public class HistoricDecisionInstanceQueryImpl extends AbstractQuery<HistoricDec
 
   public boolean isCustomObjectDeserializationEnabled() {
     return isCustomObjectDeserializationEnabled;
+  }
+
+  public String getRootDecisionInstanceId() {
+    return rootDecisionInstanceId;
+  }
+
+  public HistoricDecisionInstanceQuery rootDecisionInstanceId(String rootDecisionInstanceId) {
+    ensureNotNull(NotValidException.class, "rootDecisionInstanceId", rootDecisionInstanceId);
+    this.rootDecisionInstanceId = rootDecisionInstanceId;
+    return this;
+  }
+
+  public boolean isRootDecisionInstancesOnly() {
+    return rootDecisionInstancesOnly;
+  }
+
+  public HistoricDecisionInstanceQuery rootDecisionInstancesOnly() {
+    this.rootDecisionInstancesOnly = true;
+    return this;
+  }
+
+  @Override
+  public HistoricDecisionInstanceQuery decisionRequirementsDefinitionId(String decisionRequirementsDefinitionId) {
+    ensureNotNull(NotValidException.class, "decisionRequirementsDefinitionId", decisionRequirementsDefinitionId);
+    this.decisionRequirementsDefinitionId = decisionRequirementsDefinitionId;
+    return this;
+  }
+
+  @Override
+  public HistoricDecisionInstanceQuery decisionRequirementsDefinitionKey(String decisionRequirementsDefinitionKey) {
+    ensureNotNull(NotValidException.class, "decisionRequirementsDefinitionKey", decisionRequirementsDefinitionKey);
+    this.decisionRequirementsDefinitionKey = decisionRequirementsDefinitionKey;
+    return this;
+  }
+
+  public String getDecisionRequirementsDefinitionId() {
+    return decisionRequirementsDefinitionId;
+  }
+
+  public String getDecisionRequirementsDefinitionKey() {
+    return decisionRequirementsDefinitionKey;
   }
 }

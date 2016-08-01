@@ -5,6 +5,7 @@
 <configuration>
 	<settings>
 		<setting name="lazyLoadingEnabled" value="false" />
+    <setting name="jdbcTypeForNull" value="NULL" />
 	</settings>
 	<mappers>
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/Commons.xml" />
@@ -18,11 +19,13 @@
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricCaseActivityInstance.xml" />
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricDetail.xml" />
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricIncident.xml" />
+    <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricIdentityLinkLog.xml" />
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricProcessInstance.xml" />
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricCaseInstance.xml" />
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricStatistics.xml" />
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricVariableInstance.xml" />
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricTaskInstance.xml" />
+    <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricTaskInstanceReport.xml" />
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricJobLog.xml" />
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/UserOperationLogEntry.xml" />
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/IdentityInfo.xml" />
@@ -45,7 +48,11 @@
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/Metrics.xml" />
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/ExternalTask.xml" />
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/Report.xml" />
-
+    <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/Batch.xml" />
+    <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricBatch.xml" />
+    <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/Tenant.xml" />
+    <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/TenantMembership.xml" />
+    
     <!-- CMMN -->
 
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/CaseDefinition.xml" />
@@ -58,6 +65,7 @@
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricDecisionInstance.xml" />
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricDecisionInputInstance.xml" />
     <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/HistoricDecisionOutputInstance.xml" />
+    <mapper resource="org/camunda/bpm/engine/impl/mapping/entity/DecisionRequirementsDefinition.xml" />
 
 	</mappers>
 </configuration>

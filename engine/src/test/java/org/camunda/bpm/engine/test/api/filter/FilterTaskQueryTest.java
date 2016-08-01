@@ -21,7 +21,6 @@ import java.util.List;
 import org.camunda.bpm.engine.EntityTypes;
 import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.filter.Filter;
-import org.camunda.bpm.engine.filter.FilterQuery;
 import org.camunda.bpm.engine.identity.Group;
 import org.camunda.bpm.engine.identity.User;
 import org.camunda.bpm.engine.impl.Direction;
@@ -45,6 +44,9 @@ import org.camunda.bpm.engine.task.TaskQuery;
 import org.camunda.bpm.engine.test.Deployment;
 import org.camunda.bpm.engine.variable.Variables;
 import org.camunda.bpm.engine.variable.type.ValueType;
+
+import static org.hamcrest.core.Is.is;
+import static org.junit.Assert.assertThat;
 
 /**
  * @author Sebastian Menski
@@ -134,9 +136,12 @@ public class FilterTaskQueryTest extends PluggableProcessEngineTestCase {
     query.taskOwner(testString);
     query.taskOwnerExpression(testString);
     query.taskUnassigned();
+    query.taskAssigned();
     query.taskDelegationState(testDelegationState);
     query.taskCandidateGroupIn(testCandidateGroups);
     query.taskCandidateGroupInExpression(testString);
+    query.withCandidateGroups();
+    query.withoutCandidateGroups();
     query.processInstanceId(testString);
     query.executionId(testString);
     query.activityInstanceIdIn(testActivityInstances);
@@ -222,8 +227,11 @@ public class FilterTaskQueryTest extends PluggableProcessEngineTestCase {
     assertEquals(testString, query.getOwner());
     assertEquals(testString, query.getExpressions().get("taskOwner"));
     assertTrue(query.isUnassigned());
+    assertTrue(query.isAssigned());
     assertEquals(testDelegationState, query.getDelegationState());
     assertEquals(testCandidateGroups, query.getCandidateGroups());
+    assertTrue(query.isWithCandidateGroups());
+    assertTrue(query.isWithoutCandidateGroups());
     assertEquals(testString, query.getExpressions().get("taskCandidateGroupIn"));
     assertEquals(testString, query.getProcessInstanceId());
     assertEquals(testString, query.getExecutionId());
@@ -777,6 +785,52 @@ public class FilterTaskQueryTest extends PluggableProcessEngineTestCase {
     assertNotNull(task);
     assertEquals("Task 1", task.getName());
     assertEquals("task1", task.getId());
+  }
+
+  /**
+   * CAM-6363
+   *
+   * Verify that search by name returns case insensitive results
+   */
+  public void testTaskQueryLookupByNameCaseInsensitive() {
+    TaskQuery query = taskService.createTaskQuery();
+    query.taskName("task 1");
+    saveQuery(query);
+
+    List<Task> tasks = filterService.list(filter.getId());
+    assertNotNull(tasks);
+    assertThat(tasks.size(),is(1));
+
+    query = taskService.createTaskQuery();
+    query.taskName("tASk 2");
+    saveQuery(query);
+
+    tasks = filterService.list(filter.getId());
+    assertNotNull(tasks);
+    assertThat(tasks.size(),is(1));
+  }
+
+  /**
+   * CAM-6165
+   *
+   * Verify that search by name like returns case insensitive results
+   */
+  public void testTaskQueryLookupByNameLikeCaseInsensitive() {
+    TaskQuery query = taskService.createTaskQuery();
+    query.taskNameLike("%task%");
+    saveQuery(query);
+
+    List<Task> tasks = filterService.list(filter.getId());
+    assertNotNull(tasks);
+    assertThat(tasks.size(),is(3));
+
+    query = taskService.createTaskQuery();
+    query.taskNameLike("%Task%");
+    saveQuery(query);
+
+    tasks = filterService.list(filter.getId());
+    assertNotNull(tasks);
+    assertThat(tasks.size(),is(3));
   }
 
   public void testExecuteTaskQueryCount() {

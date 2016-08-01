@@ -27,6 +27,8 @@ import org.camunda.bpm.engine.repository.CaseDefinition;
 import org.camunda.bpm.engine.repository.CaseDefinitionQuery;
 import org.camunda.bpm.engine.repository.DecisionDefinition;
 import org.camunda.bpm.engine.repository.DecisionDefinitionQuery;
+import org.camunda.bpm.engine.repository.DecisionRequirementsDefinition;
+import org.camunda.bpm.engine.repository.DecisionRequirementsDefinitionQuery;
 import org.camunda.bpm.engine.repository.DeploymentBuilder;
 import org.camunda.bpm.engine.repository.DeploymentQuery;
 import org.camunda.bpm.engine.repository.DiagramLayout;
@@ -35,6 +37,8 @@ import org.camunda.bpm.engine.repository.ProcessApplicationDeploymentBuilder;
 import org.camunda.bpm.engine.repository.ProcessDefinition;
 import org.camunda.bpm.engine.repository.ProcessDefinitionQuery;
 import org.camunda.bpm.engine.repository.Resource;
+import org.camunda.bpm.engine.repository.UpdateProcessDefinitionSuspensionStateBuilder;
+import org.camunda.bpm.engine.repository.UpdateProcessDefinitionSuspensionStateSelectBuilder;
 import org.camunda.bpm.engine.task.IdentityLink;
 import org.camunda.bpm.model.bpmn.BpmnModelInstance;
 import org.camunda.bpm.model.cmmn.CmmnModelInstance;
@@ -113,6 +117,53 @@ public interface RepositoryService {
    */
   void deleteDeployment(String deploymentId, boolean cascade, boolean skipCustomListeners);
 
+
+  /**
+   * Deletes the process definition which belongs to the given process definition id.
+   *
+   * @param processDefinitionId the id, which corresponds to the process definition
+   * @throws ProcessEngineException
+   *          If the process definition does not exist
+   *
+   * @throws AuthorizationException
+   *          If the user has no {@link Permissions#DELETE} permission on {@link Resources#PROCESS_DEFINITION}.
+   */
+  void deleteProcessDefinition(String processDefinitionId);
+
+  /**
+   * Deletes the process definition which belongs to the given process definition id.
+   * Cascades the deletion if the cascade is set to true.
+   *
+   * @param processDefinitionId the id, which corresponds to the process definition
+   * @param cascade true if the deletion should be cascade, false otherwise
+   * @throws ProcessEngineException
+   *          If the process definition does not exist
+   *
+   * @throws AuthorizationException
+   *          If the user has no {@link Permissions#DELETE} permission on {@link Resources#PROCESS_DEFINITION}.
+   */
+  void deleteProcessDefinition(String processDefinitionId, boolean cascade);
+
+
+  /**
+   * Deletes the process definition which belongs to the given process definition id.
+   * Cascades the deletion if the cascade is set to true the custom listener
+   * can be skipped if the third parameter is set to true.
+   *
+   * @param processDefinitionId the id, which corresponds to the process definition
+   * @param cascade if set to true, all process instances (including) history are deleted
+   * @param skipCustomListeners if true, only the built-in {@link ExecutionListener}s
+   *            are notified with the {@link ExecutionListener#EVENTNAME_END} event.
+   *            Is only used if cascade set to true.
+   *
+   * @throws ProcessEngineException
+   *          If the process definition does not exist
+   *
+   * @throws AuthorizationException
+   *          If the user has no {@link Permissions#DELETE} permission on {@link Resources#PROCESS_DEFINITION}.
+   */
+  void deleteProcessDefinition(String processDefinitionId, boolean cascade, boolean skipCustomListeners);
+
   /**
    * Retrieves a list of deployment resource names for the given deployment,
    * ordered alphabetically.
@@ -179,6 +230,11 @@ public interface RepositoryService {
   DecisionDefinitionQuery createDecisionDefinitionQuery();
 
   /**
+   * Query decision requirements definition.
+   */
+  DecisionRequirementsDefinitionQuery createDecisionRequirementsDefinitionQuery();
+
+  /**
    * Query process definitions.
    */
   DeploymentQuery createDeploymentQuery();
@@ -192,6 +248,8 @@ public interface RepositoryService {
    * <strong>Note: all the process instances of the process definition will still be active
    * (ie. not suspended)!</strong>
    *
+   * <p>Note: for more complex suspend commands use {@link #updateProcessDefinitionSuspensionState()}.</p>
+   *
    * @throws ProcessEngineException
    *          If no such processDefinition can be found.
    * @throws AuthorizationException
@@ -204,6 +262,8 @@ public interface RepositoryService {
    *
    * If a process definition is in state suspended, it will not be possible to start new process instances
    * based on the process definition.
+   *
+   * <p>Note: for more complex suspend commands use {@link #updateProcessDefinitionSuspensionState()}.</p>
    *
    * @param suspendProcessInstances If true, all the process instances of the provided process definition
    *                                will be suspended too.
@@ -232,6 +292,8 @@ public interface RepositoryService {
    * <strong>Note: all the process instances of the process definition will still be active
    * (ie. not suspended)!</strong>
    *
+   * <p>Note: for more complex suspend commands use {@link #updateProcessDefinitionSuspensionState()}.</p>
+   *
    * @throws ProcessEngineException
    *          If no such processDefinition can be found.
    * @throws AuthorizationException
@@ -244,6 +306,8 @@ public interface RepositoryService {
    *
    * If a process definition is in state suspended, it will not be possible to start new process instances
    * based on the process definition.
+   *
+   * <p>Note: for more complex suspend commands use {@link #updateProcessDefinitionSuspensionState()}.</p>
    *
    * @param suspendProcessInstances If true, all the process instances of the provided process definition
    *                                will be suspended too.
@@ -266,6 +330,8 @@ public interface RepositoryService {
   /**
    * Activates the process definition with the given id.
    *
+   * <p>Note: for more complex activate commands use {@link #updateProcessDefinitionSuspensionState()}.</p>
+   *
    * @throws ProcessEngineException
    *          If no such processDefinition can be found or if the process definition is already in state active.
    * @throws AuthorizationException
@@ -275,6 +341,8 @@ public interface RepositoryService {
 
   /**
    * Activates the process definition with the given id.
+   *
+   * <p>Note: for more complex activate commands use {@link #updateProcessDefinitionSuspensionState()}.</p>
    *
    * @param suspendProcessInstances If true, all the process instances of the provided process definition
    *                                will be activated too.
@@ -297,6 +365,8 @@ public interface RepositoryService {
   /**
    * Activates the process definition with the given key (=id in the bpmn20.xml file).
    *
+   * <p>Note: for more complex activate commands use {@link #updateProcessDefinitionSuspensionState()}.</p>
+   *
    * @throws ProcessEngineException
    *          If no such processDefinition can be found.
    * @throws AuthorizationException
@@ -306,6 +376,8 @@ public interface RepositoryService {
 
   /**
    * Activates the process definition with the given key (=id in the bpmn20.xml file).
+   *
+   * <p>Note: for more complex activate commands use {@link #updateProcessDefinitionSuspensionState()}.</p>
    *
    * @param suspendProcessInstances If true, all the process instances of the provided process definition
    *                                will be activated too.
@@ -324,6 +396,17 @@ public interface RepositoryService {
    * @see RuntimeService#activateProcessInstanceById(String)
    */
   void activateProcessDefinitionByKey(String processDefinitionKey, boolean activateProcessInstances,  Date activationDate);
+
+  /**
+   * Activate or suspend process definitions using a fluent builder. Specify the
+   * definitions by calling one of the <i>by</i> methods, like
+   * <i>byProcessDefinitionId</i>. To update the suspension state call
+   * {@link UpdateProcessDefinitionSuspensionStateBuilder#activate()} or
+   * {@link UpdateProcessDefinitionSuspensionStateBuilder#suspend()}.
+   *
+   * @return the builder to update the suspension state
+   */
+  UpdateProcessDefinitionSuspensionStateSelectBuilder updateProcessDefinitionSuspensionState();
 
   /**
    * Gives access to a deployed process model, e.g., a BPMN 2.0 XML file,
@@ -543,7 +626,18 @@ public interface RepositoryService {
   DecisionDefinition getDecisionDefinition(String decisionDefinitionId);
 
   /**
-   * Gives access to a deployed decision model, e.g., a DMN 1.0 XML file,
+   * Returns the {@link DecisionRequirementsDefinition}.
+   *
+   * @throws NotValidException when the given decision requirements definition id is null
+   * @throws NotFoundException when no decision requirements definition is found for the given decision requirements definition id
+   * @throws ProcessEngineException when an internal exception happens during the execution of the command.
+   * @throws AuthorizationException
+   *          If the user has no {@link Permissions#READ} permission on {@link Resources#DECISION_REQUIREMENTS_DEFINITION}.
+   */
+  DecisionRequirementsDefinition getDecisionRequirementsDefinition(String decisionRequirementsDefinitionId);
+
+  /**
+   * Gives access to a deployed decision model, e.g., a DMN 1.1 XML file,
    * through a stream of bytes.
    *
    * @param decisionDefinitionId
@@ -558,16 +652,43 @@ public interface RepositoryService {
   InputStream getDecisionModel(String decisionDefinitionId);
 
   /**
+   * Gives access to a deployed decision requirements model, e.g., a DMN 1.1 XML file,
+   * through a stream of bytes.
+   *
+   * @param decisionRequirementsDefinitionId
+   *          id of a {@link DecisionRequirementsDefinition}, cannot be null.
+   *
+   * @throws NotValidException when the given decision requirements definition id or deployment id or resource name is null
+   * @throws NotFoundException when no decision requirements definition or deployment resource is found for the given decision requirements definition id
+   * @throws ProcessEngineException when an internal exception happens during the execution of the command
+   * @throws AuthorizationException
+   *          If the user has no {@link Permissions#READ} permission on {@link Resources#DECISION_REQUIREMENTS_DEFINITION}.
+   */
+  InputStream getDecisionRequirementsModel(String decisionRequirementsDefinitionId);
+
+  /**
    * Gives access to a deployed decision diagram, e.g., a PNG image, through a
    * stream of bytes.
    *
    * @param decisionDefinitionId id of a {@link DecisionDefinition}, cannot be null.
    * @return null when the diagram resource name of a {@link DecisionDefinition} is null.
-   * @throws ProcessEngineException when the process diagram doesn't exist.
+   * @throws ProcessEngineException when the decision diagram doesn't exist.
    * @throws AuthorizationException
    *          If the user has no {@link Permissions#READ} permission on {@link Resources#DECISION_DEFINITION}.
    */
   InputStream getDecisionDiagram(String decisionDefinitionId);
+
+  /**
+   * Gives access to a deployed decision requirements diagram, e.g., a PNG image, through a
+   * stream of bytes.
+   *
+   * @param decisionRequirementsDefinitionId id of a {@link DecisionRequirementsDefinition}, cannot be null.
+   * @return null when the diagram resource name of a {@link DecisionRequirementsDefinition} is null.
+   * @throws ProcessEngineException when the decision requirements diagram doesn't exist.
+   * @throws AuthorizationException
+   *          If the user has no {@link Permissions#READ} permission on {@link Resources#DECISION_REQUIREMENTS_DEFINITION}.
+   */
+  InputStream getDecisionRequirementsDiagram(String decisionRequirementsDefinitionId);
 
 }
 

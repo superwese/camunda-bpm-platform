@@ -11,7 +11,7 @@
 
   <groupId>org.camunda.bpm</groupId>
   <artifactId>camunda-root</artifactId>
-  <version>7.5.0-SNAPSHOT</version>
+  <version>7.6.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>camunda BPM - Root Pom</name>
 
@@ -19,9 +19,6 @@
     This pom defines the modules that make up the build.
     The parent pom for all camunda BPM projects can be found in the parent directory relative to this file.
   </description>
-
-  <properties>
-  </properties>
 
   <profiles>
     <!-- distro profile is default and builds the complete distribution.
@@ -41,7 +38,6 @@
         <module>javaee/jobexecutor-ra</module>
         <module>javaee/jobexecutor-rar</module>
 
-
         <module>engine</module>
         <module>engine-cdi</module>
         <module>engine-spring</module>
@@ -52,9 +48,9 @@
         <module>engine-plugins</module>
 
         <module>distro/jbossas7</module>
-        <module>distro/gf31</module>
         <module>distro/tomcat</module>
         <module>distro/sql-script</module>
+
 
         <module>database</module>
         <module>parent</module>
@@ -69,7 +65,6 @@
       </activation>
       <modules>
         <module>distro/jbossas7</module>
-        <module>distro/gf31</module>
         <module>distro/tomcat</module>
       </modules>
     </profile>
@@ -110,20 +105,6 @@
     </profile>
 
     <profile>
-      <id>distro-gf31</id>
-      <activation>
-        <activeByDefault>true</activeByDefault>
-      </activation>
-      <modules>
-        <module>javaee/ejb-service</module>
-        <module>javaee/ejb-client</module>
-        <module>javaee/jobexecutor-ra</module>
-        <module>javaee/jobexecutor-rar</module>
-        <module>distro/gf31</module>
-      </modules>
-    </profile>
-
-    <profile>
       <id>distro-tomcat</id>
       <activation>
         <activeByDefault>true</activeByDefault>
@@ -141,6 +122,17 @@
       <modules>
         <module>javaee/ejb-client</module>
         <module>distro/wildfly</module>
+        <module>distro/wildfly10</module>
+      </modules>
+    </profile>
+
+    <profile>
+      <id>distro-webjar</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <modules>
+        <module>distro/webjar</module>
       </modules>
     </profile>
 
@@ -158,6 +150,7 @@
         <module>bom</module>
       </modules>
     </profile>
+
     <profile>
       <!-- profile for running webapp unit tests in QA -->
       <id>check-webapps</id>
@@ -166,6 +159,7 @@
         <module>bom</module>
       </modules>
     </profile>
+
     <profile>
       <id>sonatype-oss-release</id>
       <modules>
@@ -177,6 +171,8 @@
         <module>javaee/ejb-client</module>
 
         <module>engine-plugins</module>
+
+        <module>distro/webjar</module>
 
         <module>database</module>
         <module>parent</module>

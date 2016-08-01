@@ -15,7 +15,6 @@ package org.camunda.bpm.engine.impl.util;
 import org.camunda.bpm.engine.delegate.VariableScope;
 import org.camunda.bpm.engine.impl.cmmn.model.CmmnCaseDefinition;
 import org.camunda.bpm.engine.impl.context.Context;
-import org.camunda.bpm.engine.impl.core.instance.CoreExecution;
 import org.camunda.bpm.engine.impl.core.model.BaseCallableElement;
 import org.camunda.bpm.engine.impl.persistence.deploy.DeploymentCache;
 import org.camunda.bpm.engine.impl.pvm.process.ProcessDefinitionImpl;
@@ -35,7 +34,7 @@ public class CallableElementUtil {
 
   public static ProcessDefinitionImpl getProcessDefinitionToCall(VariableScope execution, BaseCallableElement callableElement) {
     String processDefinitionKey = callableElement.getDefinitionKey(execution);
-    String tenantId = callableElement.getDefinitionTenantId((CoreExecution) execution);
+    String tenantId = callableElement.getDefinitionTenantId(execution);
 
     DeploymentCache deploymentCache = getDeploymentCache();
 
@@ -58,7 +57,7 @@ public class CallableElementUtil {
 
   public static CmmnCaseDefinition getCaseDefinitionToCall(VariableScope execution, BaseCallableElement callableElement) {
     String caseDefinitionKey = callableElement.getDefinitionKey(execution);
-    String tenantId = callableElement.getDefinitionTenantId((CoreExecution) execution);
+    String tenantId = callableElement.getDefinitionTenantId(execution);
 
     DeploymentCache deploymentCache = getDeploymentCache();
 
@@ -80,12 +79,13 @@ public class CallableElementUtil {
 
   public static DecisionDefinition getDecisionDefinitionToCall(VariableScope execution, BaseCallableElement callableElement) {
     String decisionDefinitionKey = callableElement.getDefinitionKey(execution);
+    String tenantId = callableElement.getDefinitionTenantId(execution);
 
     DeploymentCache deploymentCache = getDeploymentCache();
 
     DecisionDefinition decisionDefinition = null;
     if (callableElement.isLatestBinding()) {
-      decisionDefinition = deploymentCache.findDeployedLatestDecisionDefinitionByKey(decisionDefinitionKey);
+      decisionDefinition = deploymentCache.findDeployedLatestDecisionDefinitionByKeyAndTenantId(decisionDefinitionKey, tenantId);
 
     } else if (callableElement.isDeploymentBinding()) {
       String deploymentId = callableElement.getDeploymentId();
@@ -93,7 +93,7 @@ public class CallableElementUtil {
 
     } else if (callableElement.isVersionBinding()) {
       Integer version = callableElement.getVersion(execution);
-      decisionDefinition = deploymentCache.findDeployedDecisionDefinitionByKeyAndVersion(decisionDefinitionKey, version);
+      decisionDefinition = deploymentCache.findDeployedDecisionDefinitionByKeyVersionAndTenantId(decisionDefinitionKey, version, tenantId);
     }
 
     return decisionDefinition;

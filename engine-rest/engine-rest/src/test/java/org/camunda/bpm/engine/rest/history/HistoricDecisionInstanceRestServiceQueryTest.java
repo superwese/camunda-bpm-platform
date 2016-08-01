@@ -3,6 +3,7 @@ package org.camunda.bpm.engine.rest.history;
 import static com.jayway.restassured.RestAssured.expect;
 import static com.jayway.restassured.RestAssured.given;
 import static com.jayway.restassured.path.json.JsonPath.from;
+import static org.fest.assertions.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasEntry;
@@ -19,6 +20,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -141,6 +143,16 @@ public class HistoricDecisionInstanceRestServiceQueryTest extends AbstractRestSe
     executeAndVerifySorting("evaluationTime", "desc", Status.OK);
     inOrder.verify(mockedQuery).orderByEvaluationTime();
     inOrder.verify(mockedQuery).desc();
+
+    inOrder = Mockito.inOrder(mockedQuery);
+    executeAndVerifySorting("tenantId", "asc", Status.OK);
+    inOrder.verify(mockedQuery).orderByTenantId();
+    inOrder.verify(mockedQuery).asc();
+
+    inOrder = Mockito.inOrder(mockedQuery);
+    executeAndVerifySorting("tenantId", "desc", Status.OK);
+    inOrder.verify(mockedQuery).orderByTenantId();
+    inOrder.verify(mockedQuery).desc();
   }
 
   @Test
@@ -234,6 +246,10 @@ public class HistoricDecisionInstanceRestServiceQueryTest extends AbstractRestSe
     List<HistoricDecisionInputInstanceDto> returnedInputs = from(content).getList("[0].inputs");
     List<HistoricDecisionOutputInstanceDto> returnedOutputs = from(content).getList("[0].outputs");
     Double returnedCollectResultValue = from(content).getDouble("[0].collectResultValue");
+    String returnedTenantId = from(content).getString("[0].tenantId");
+    String returnedRootDecisionInstanceId = from(content).getString("[0].rootDecisionInstanceId");
+    String returnedDecisionRequirementsDefinitionId = from(content).getString("[0].decisionRequirementsDefinitionId");
+    String returnedDecisionRequirementsDefinitionKey = from(content).getString("[0].decisionRequirementsDefinitionKey");
 
     assertThat(returnedHistoricDecisionInstanceId, is(MockProvider.EXAMPLE_HISTORIC_DECISION_INSTANCE_ID));
     assertThat(returnedDecisionDefinitionId, is(MockProvider.EXAMPLE_DECISION_DEFINITION_ID));
@@ -251,6 +267,10 @@ public class HistoricDecisionInstanceRestServiceQueryTest extends AbstractRestSe
     assertThat(returnedInputs, is(nullValue()));
     assertThat(returnedOutputs, is(nullValue()));
     assertThat(returnedCollectResultValue, is(MockProvider.EXAMPLE_HISTORIC_DECISION_INSTANCE_COLLECT_RESULT_VALUE));
+    assertThat(returnedTenantId, is(MockProvider.EXAMPLE_TENANT_ID));
+    assertThat(returnedRootDecisionInstanceId, is(MockProvider.EXAMPLE_HISTORIC_DECISION_INSTANCE_ID));
+    assertThat(returnedDecisionRequirementsDefinitionId, is(MockProvider.EXAMPLE_DECISION_REQUIREMENTS_DEFINITION_ID));
+    assertThat(returnedDecisionRequirementsDefinitionKey, is(MockProvider.EXAMPLE_DECISION_REQUIREMENTS_DEFINITION_KEY));
   }
 
   @Test
@@ -441,6 +461,51 @@ public class HistoricDecisionInstanceRestServiceQueryTest extends AbstractRestSe
     inOrder.verify(mockedQuery).list();
   }
 
+  @Test
+  public void testRootDecisionInstancesOnly() {
+
+    given()
+        .queryParam("rootDecisionInstancesOnly", true)
+      .then().expect()
+        .statusCode(Status.OK.getStatusCode())
+      .when()
+        .get(HISTORIC_DECISION_INSTANCE_RESOURCE_URL);
+
+    verify(mockedQuery).rootDecisionInstancesOnly();
+    verify(mockedQuery).list();
+  }
+
+  @Test
+  public void testTenantIdListParameter() {
+    mockedQuery = setUpMockHistoricDecisionInstanceQuery(createMockHistoricDecisionInstancesTwoTenants());
+
+    Response response = given()
+      .queryParam("tenantIdIn", MockProvider.EXAMPLE_TENANT_ID_LIST)
+    .then().expect()
+      .statusCode(Status.OK.getStatusCode())
+    .when()
+      .get(HISTORIC_DECISION_INSTANCE_RESOURCE_URL);
+
+    verify(mockedQuery).tenantIdIn(MockProvider.EXAMPLE_TENANT_ID, MockProvider.ANOTHER_EXAMPLE_TENANT_ID);
+    verify(mockedQuery).list();
+
+    String content = response.asString();
+    List<String> historicDecisionInstances = from(content).getList("");
+    assertThat(historicDecisionInstances).hasSize(2);
+
+    String returnedTenantId1 = from(content).getString("[0].tenantId");
+    String returnedTenantId2 = from(content).getString("[1].tenantId");
+
+    assertThat(returnedTenantId1).isEqualTo(MockProvider.EXAMPLE_TENANT_ID);
+    assertThat(returnedTenantId2).isEqualTo(MockProvider.ANOTHER_EXAMPLE_TENANT_ID);
+  }
+
+  private List<HistoricDecisionInstance> createMockHistoricDecisionInstancesTwoTenants() {
+    return Arrays.asList(
+        MockProvider.createMockHistoricDecisionInstanceBase(MockProvider.EXAMPLE_TENANT_ID),
+        MockProvider.createMockHistoricDecisionInstanceBase(MockProvider.ANOTHER_EXAMPLE_TENANT_ID));
+  }
+
   protected Map<String, String> getCompleteStringQueryParameters() {
     Map<String, String> parameters = new HashMap<String, String>();
 
@@ -459,6 +524,10 @@ public class HistoricDecisionInstanceRestServiceQueryTest extends AbstractRestSe
     parameters.put("activityInstanceIdIn", MockProvider.EXAMPLE_HISTORIC_DECISION_INSTANCE_ACTIVITY_INSTANCE_ID_IN);
     parameters.put("evaluatedBefore", MockProvider.EXAMPLE_HISTORIC_DECISION_INSTANCE_EVALUATED_BEFORE);
     parameters.put("evaluatedAfter", MockProvider.EXAMPLE_HISTORIC_DECISION_INSTANCE_EVALUATED_AFTER);
+    parameters.put("userId", MockProvider.EXAMPLE_HISTORIC_DECISION_INSTANCE_USER_ID);
+    parameters.put("rootDecisionInstanceId", MockProvider.EXAMPLE_HISTORIC_DECISION_INSTANCE_ID);
+    parameters.put("decisionRequirementsDefinitionId", MockProvider.EXAMPLE_DECISION_REQUIREMENTS_DEFINITION_ID);
+    parameters.put("decisionRequirementsDefinitionKey", MockProvider.EXAMPLE_DECISION_REQUIREMENTS_DEFINITION_KEY);
 
     return parameters;
   }
@@ -482,6 +551,10 @@ public class HistoricDecisionInstanceRestServiceQueryTest extends AbstractRestSe
     verify(mockedQuery).activityInstanceIdIn(stringArrayConverter.convertQueryParameterToType(stringQueryParameters.get("activityInstanceIdIn")));
     verify(mockedQuery).evaluatedBefore(DateTimeUtil.parseDate(stringQueryParameters.get("evaluatedBefore")));
     verify(mockedQuery).evaluatedAfter(DateTimeUtil.parseDate(stringQueryParameters.get("evaluatedAfter")));
+    verify(mockedQuery).userId(stringQueryParameters.get("userId"));
+    verify(mockedQuery).rootDecisionInstanceId(stringQueryParameters.get("rootDecisionInstanceId"));
+    verify(mockedQuery).decisionRequirementsDefinitionId(stringQueryParameters.get("decisionRequirementsDefinitionId"));
+    verify(mockedQuery).decisionRequirementsDefinitionKey(stringQueryParameters.get("decisionRequirementsDefinitionKey"));
 
     verify(mockedQuery).list();
   }

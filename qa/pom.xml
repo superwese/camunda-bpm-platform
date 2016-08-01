@@ -11,7 +11,7 @@
     <groupId>org.camunda.bpm</groupId>
     <artifactId>camunda-database-settings</artifactId>
     <relativePath>../database</relativePath>
-    <version>7.5.0-SNAPSHOT</version>
+    <version>7.6.0-SNAPSHOT</version>
   </parent>
 
   <properties>
@@ -20,9 +20,6 @@
     -->
     <!-- override mail port so subethawiser does not try to bind itself on port 25 -->
     <mail.server.port>5025</mail.server.port>
-
-    <!-- wildfly : uses the same properties as jboss -->
-    <wildfly.runtime.location>../wildfly-runtime/target/server/wildfly-${version.wildfly}/</wildfly.runtime.location>
 
     <!-- jboss -->
     <jboss.runtime.location>../jboss7-runtime/target/server/jboss-as-${version.jboss.as}/</jboss.runtime.location>
@@ -38,22 +35,6 @@
     <jboss.txn-recovery-environment.port>34712</jboss.txn-recovery-environment.port>
     <jboss.txn-status-manager.port>34713</jboss.txn-status-manager.port>
     <jboss.mail-smtp.port>25</jboss.mail-smtp.port>
-
-    <!-- glassfish properties -->
-    <glassfish.runtime.location>../gf31-runtime/target/server/glassfish3</glassfish.runtime.location>
-
-    <glassfish.http.port>28080</glassfish.http.port>
-    <glassfish.admin.port>24848</glassfish.admin.port>
-    <glassfish.ASADMIN_LISTENER_PORT>24848</glassfish.ASADMIN_LISTENER_PORT>
-    <glassfish.HTTP_SSL_LISTENER_PORT>28181</glassfish.HTTP_SSL_LISTENER_PORT>
-    <glassfish.JMS_PROVIDER_PORT>27676</glassfish.JMS_PROVIDER_PORT>
-    <glassfish.IIOP_LISTENER_PORT>23700</glassfish.IIOP_LISTENER_PORT>
-    <glassfish.IIOP_SSL_LISTENER_PORT>23820</glassfish.IIOP_SSL_LISTENER_PORT>
-    <glassfish.IIOP_SSL_MUTUALAUTH_PORT>23920</glassfish.IIOP_SSL_MUTUALAUTH_PORT>
-    <glassfish.JMX_SYSTEM_CONNECTOR_PORT>28686</glassfish.JMX_SYSTEM_CONNECTOR_PORT>
-    <glassfish.OSGI_SHELL_TELNET_PORT>26666</glassfish.OSGI_SHELL_TELNET_PORT>
-    <glassfish.JAVA_DEBUGGER_PORT>29009</glassfish.JAVA_DEBUGGER_PORT>
-
 
     <!-- tomcat -->
     <tomcat6.connector.http.port>48080</tomcat6.connector.http.port>
@@ -79,30 +60,18 @@
       </activation>
       <modules>
         <module>jboss7-runtime</module>
-        <module>gf31-runtime</module>
+        <module>wildfly-runtime</module>
         <module>tomcat-runtime</module>
         <module>integration-tests-webapps</module>
         <module>integration-tests-engine</module>
         <module>test-db-upgrade</module>
         <module>test-db-instance-migration</module>
-      </modules>
-    </profile>
-
-    <profile>
-      <id>distro-wildfly</id>
-      <modules>
-        <module>wildfly-runtime</module>
+        <module>test-old-engine-instances</module>
+        <module>test-schema-with-old-engine</module>
       </modules>
     </profile>
 
     <!-- Server profiles -->
-
-    <profile>
-      <id>glassfish</id>
-      <modules>
-        <module>gf31-runtime</module>
-      </modules>
-    </profile>
 
     <profile>
       <id>jboss</id>
@@ -128,6 +97,18 @@
       <modules>
         <module>wildfly-runtime</module>
       </modules>
+    </profile>
+    <profile>
+      <id>wildfly8</id>
+      <properties>
+        <wildfly.runtime.location>../wildfly-runtime/target/server/wildfly-${version.wildfly}/</wildfly.runtime.location>
+      </properties>
+    </profile>
+    <profile>
+      <id>wildfly10</id>
+      <properties>
+        <wildfly.runtime.location>../wildfly-runtime/target/server/wildfly-${version.wildfly10}/</wildfly.runtime.location>
+      </properties>
     </profile>
 
     <profile>
@@ -167,100 +148,19 @@
       </modules>
     </profile>
 
-    <!--
-      database profiles
-      - ordering is important:
-      <database> profile must be before the corresponding <database>-xa profile
-    -->
-
     <profile>
-      <id>db2</id>
-      <properties>
-        <glassfish.domain.xml>domain.xml</glassfish.domain.xml>
-      </properties>
-    </profile>
-    <profile>
-      <id>db2-xa</id>
-      <properties>
-        <glassfish.domain.xml>domain-xa.xml</glassfish.domain.xml>
-      </properties>
+      <id>old-engine-instances</id>
+      <modules>
+        <module>test-old-engine-instances</module>
+      </modules>
     </profile>
 
     <profile>
-      <id>h2</id>
-      <activation>
-        <activeByDefault>true</activeByDefault>
-      </activation>
-      <properties>
-        <glassfish.domain.xml>domain.xml</glassfish.domain.xml>
-      </properties>
+      <id>old-engine</id>
+      <modules>
+        <module>test-schema-with-old-engine</module>
+      </modules>
     </profile>
-
-    <profile>
-      <id>mariadb</id>
-      <properties>
-        <glassfish.domain.xml>domain-xa.xml</glassfish.domain.xml>
-      </properties>
-    </profile>
-    <profile>
-      <id>mariadb-xa</id>
-      <properties>
-        <glassfish.domain.xml>domain-xa.xml</glassfish.domain.xml>
-      </properties>
-    </profile>
-
-    <profile>
-      <id>mysql</id>
-      <properties>
-        <glassfish.domain.xml>domain-xa.xml</glassfish.domain.xml>
-      </properties>
-    </profile>
-    <profile>
-      <id>mysql-xa</id>
-      <properties>
-        <glassfish.domain.xml>domain-xa.xml</glassfish.domain.xml>
-      </properties>
-    </profile>
-
-    <profile>
-      <id>oracle</id>
-      <properties>
-        <glassfish.domain.xml>domain.xml</glassfish.domain.xml>
-      </properties>
-    </profile>
-    <profile>
-      <id>oracle-xa</id>
-      <properties>
-        <glassfish.domain.xml>domain-xa.xml</glassfish.domain.xml>
-      </properties>
-    </profile>
-
-    <profile>
-      <id>postgresql</id>
-      <properties>
-        <glassfish.domain.xml>domain.xml</glassfish.domain.xml>
-      </properties>
-    </profile>
-    <profile>
-      <id>postgresql-xa</id>
-      <properties>
-        <glassfish.domain.xml>domain-xa.xml</glassfish.domain.xml>
-      </properties>
-    </profile>
-
-    <profile>
-      <id>sqlserver</id>
-      <properties>
-        <glassfish.domain.xml>domain.xml</glassfish.domain.xml>
-      </properties>
-    </profile>
-    <profile>
-      <id>sqlserver-xa</id>
-      <properties>
-        <glassfish.domain.xml>domain-xa.xml</glassfish.domain.xml>
-      </properties>
-    </profile>
-
   </profiles>
 
 </project>

@@ -15,8 +15,10 @@ package org.camunda.bpm.engine.impl.persistence.entity;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.camunda.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl;
 import org.camunda.bpm.engine.impl.context.Context;
@@ -25,6 +27,7 @@ import org.camunda.bpm.engine.impl.db.HasDbReferences;
 import org.camunda.bpm.engine.impl.db.HasDbRevision;
 import org.camunda.bpm.engine.impl.history.HistoryLevel;
 import org.camunda.bpm.engine.impl.history.event.HistoryEvent;
+import org.camunda.bpm.engine.impl.history.event.HistoryEventProcessor;
 import org.camunda.bpm.engine.impl.history.event.HistoryEventType;
 import org.camunda.bpm.engine.impl.history.event.HistoryEventTypes;
 import org.camunda.bpm.engine.impl.history.handler.HistoryEventHandler;
@@ -52,6 +55,7 @@ public class IncidentEntity implements Incident, DbEntity, HasDbRevision, HasDbR
   protected String configuration;
   protected String incidentMessage;
   protected String tenantId;
+  protected String jobDefinitionId;
 
   public List<IncidentEntity> createRecursiveIncidents() {
     List<IncidentEntity> createdIncidents = new ArrayList<IncidentEntity>();
@@ -78,6 +82,9 @@ public class IncidentEntity implements Incident, DbEntity, HasDbRevision, HasDbR
         // create a new incident
         IncidentEntity newIncident = create(incidentType);
         newIncident.setExecution(superExecution);
+        newIncident.setActivityId(superExecution.getCurrentActivityId());
+        newIncident.setProcessDefinitionId(superExecution.getProcessDefinitionId());
+        newIncident.setTenantId(superExecution.getTenantId());
 
         // set cause and root cause
         newIncident.setCauseIncidentId(id);
@@ -94,40 +101,27 @@ public class IncidentEntity implements Incident, DbEntity, HasDbRevision, HasDbR
     }
   }
 
-  /**
-   * use {@link #createAndInsertIncident(String, IncidentContext, String)}
-   */
-  @Deprecated
-  public static IncidentEntity createAndInsertIncident(String incidentType, String executionId, String configuration, String message) {
-    IncidentContext ctx = new IncidentContext();
-    ctx.setExecutionId(executionId);
-    ctx.setConfiguration(configuration);
-
-    return createAndInsertIncident(incidentType, ctx, message);
-  }
-
   public static IncidentEntity createAndInsertIncident(String incidentType, IncidentContext context, String message) {
     // create new incident
     IncidentEntity newIncident = create(incidentType);
-
-    newIncident.setConfiguration(context.getConfiguration());
     newIncident.setIncidentMessage(message);
 
-    if(context.getExecutionId() != null) {
+    // set properties from incident context
+    newIncident.setConfiguration(context.getConfiguration());
+    newIncident.setActivityId(context.getActivityId());
+    newIncident.setProcessDefinitionId(context.getProcessDefinitionId());
+    newIncident.setTenantId(context.getTenantId());
+    newIncident.setJobDefinitionId(context.getJobDefinitionId());
+
+    if (context.getExecutionId() != null) {
       // fetch execution
       ExecutionEntity execution = Context
         .getCommandContext()
         .getExecutionManager()
         .findExecutionById(context.getExecutionId());
 
-      // inherit further properties from execution
+      // link incident with execution
       newIncident.setExecution(execution);
-
-    } else {
-      // set further properties from context
-      newIncident.setActivityId(context.getActivityId());
-      newIncident.setProcessDefinitionId(context.getProcessDefinitionId());
-      newIncident.setTenantId(context.getTenantId());
     }
 
     // insert new incident (and create a new historic incident)
@@ -210,45 +204,41 @@ public class IncidentEntity implements Incident, DbEntity, HasDbRevision, HasDbR
     fireHistoricIncidentEvent(eventType);
   }
 
-  protected void fireHistoricIncidentEvent(HistoryEventType eventType) {
+  protected void fireHistoricIncidentEvent(final HistoryEventType eventType) {
     ProcessEngineConfigurationImpl processEngineConfiguration = Context.getProcessEngineConfiguration();
 
     HistoryLevel historyLevel = processEngineConfiguration.getHistoryLevel();
     if(historyLevel.isHistoryEventProduced(eventType, this)) {
 
-      final HistoryEventProducer eventProducer = processEngineConfiguration.getHistoryEventProducer();
-      final HistoryEventHandler eventHandler = processEngineConfiguration.getHistoryEventHandler();
+      HistoryEventProcessor.processHistoryEvents(new HistoryEventProcessor.HistoryEventCreator() {
+        @Override
+        public HistoryEvent createHistoryEvent(HistoryEventProducer producer) {
 
-      HistoryEvent event = null;
-      if (HistoryEvent.INCIDENT_CREATE.equals(eventType.getEventName())) {
-        event = eventProducer.createHistoricIncidentCreateEvt(this);
+          HistoryEvent event = null;
+          if (HistoryEvent.INCIDENT_CREATE.equals(eventType.getEventName())) {
+            event = producer.createHistoricIncidentCreateEvt(IncidentEntity.this);
 
-      } else if (HistoryEvent.INCIDENT_RESOLVE.equals(eventType.getEventName())) {
-        event = eventProducer.createHistoricIncidentResolveEvt(this);
+          } else if (HistoryEvent.INCIDENT_RESOLVE.equals(eventType.getEventName())) {
+            event = producer.createHistoricIncidentResolveEvt(IncidentEntity.this);
 
-      } else if (HistoryEvent.INCIDENT_DELETE.equals(eventType.getEventName())) {
-        event = eventProducer.createHistoricIncidentDeleteEvt(this);
-
-      } else {
-        return;
-      }
-
-      eventHandler.handleEvent(event);
+          } else if (HistoryEvent.INCIDENT_DELETE.equals(eventType.getEventName())) {
+            event = producer.createHistoricIncidentDeleteEvt(IncidentEntity.this);
+          }
+          return event;
+        }
+      });
     }
   }
 
   @Override
-  public boolean hasReferenceTo(DbEntity entity) {
-    if (entity instanceof IncidentEntity) {
-      IncidentEntity incident = (IncidentEntity) entity;
-      String otherId = incident.getId();
+  public Set<String> getReferencedEntityIds() {
+    Set<String> referenceIds = new HashSet<String>();
 
-      if(causeIncidentId != null && causeIncidentId.equals(otherId)) {
-        return true;
-      }
-
+    if (causeIncidentId != null) {
+      referenceIds.add(causeIncidentId);
     }
-    return false;
+
+    return referenceIds;
   }
 
   @Override
@@ -370,23 +360,25 @@ public class IncidentEntity implements Incident, DbEntity, HasDbRevision, HasDbR
     this.tenantId = tenantId;
   }
 
+
+  public void setJobDefinitionId(String jobDefinitionId) {
+    this.jobDefinitionId = jobDefinitionId;
+  }
+
+  public String getJobDefinitionId() {
+    return jobDefinitionId;
+  }
+
   public void setExecution(ExecutionEntity execution) {
     if (execution != null) {
       executionId = execution.getId();
-      activityId = execution.getActivityId();
       processInstanceId = execution.getProcessInstanceId();
-      processDefinitionId = execution.getProcessDefinitionId();
-      tenantId = execution.getTenantId();
-
       execution.addIncident(this);
     }
     else {
       getExecution().removeIncident(this);
       executionId = null;
-      activityId = null;
       processInstanceId = null;
-      processDefinitionId = null;
-      tenantId = null;
     }
   }
 
@@ -406,6 +398,7 @@ public class IncidentEntity implements Incident, DbEntity, HasDbRevision, HasDbR
     persistentState.put("executionId", executionId);
     persistentState.put("processDefinitionId", processDefinitionId);
     persistentState.put("activityId", activityId);
+    persistentState.put("jobDefinitionId", jobDefinitionId);
     return persistentState;
   }
 
@@ -439,6 +432,7 @@ public class IncidentEntity implements Incident, DbEntity, HasDbRevision, HasDbR
            + ", configuration=" + configuration
            + ", tenantId=" + tenantId
            + ", incidentMessage=" + incidentMessage
+           + ", jobDefinitionId=" + jobDefinitionId
            + "]";
   }
 
@@ -466,6 +460,5 @@ public class IncidentEntity implements Incident, DbEntity, HasDbRevision, HasDbR
       return false;
     return true;
   }
-
 
 }

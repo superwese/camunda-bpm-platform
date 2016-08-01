@@ -24,6 +24,7 @@ import org.camunda.bpm.engine.impl.EventSubscriptionQueryImpl;
 import org.camunda.bpm.engine.impl.Page;
 import org.camunda.bpm.engine.impl.ProcessEngineLogger;
 import org.camunda.bpm.engine.impl.db.EnginePersistenceLogger;
+import org.camunda.bpm.engine.impl.db.ListQueryParameterObject;
 import org.camunda.bpm.engine.impl.jobexecutor.ProcessEventJobHandler;
 import org.camunda.bpm.engine.impl.persistence.AbstractManager;
 import org.camunda.bpm.engine.runtime.EventSubscription;
@@ -70,13 +71,13 @@ public class EventSubscriptionManager extends AbstractManager {
   }
 
   public long findEventSubscriptionCountByQueryCriteria(EventSubscriptionQueryImpl eventSubscriptionQueryImpl) {
-    configureAuthorizationCheck(eventSubscriptionQueryImpl);
+    configureQuery(eventSubscriptionQueryImpl);
     return (Long) getDbEntityManager().selectOne("selectEventSubscriptionCountByQueryCriteria", eventSubscriptionQueryImpl);
   }
 
   @SuppressWarnings("unchecked")
   public List<EventSubscription> findEventSubscriptionsByQueryCriteria(EventSubscriptionQueryImpl eventSubscriptionQueryImpl, Page page) {
-    configureAuthorizationCheck(eventSubscriptionQueryImpl);
+    configureQuery(eventSubscriptionQueryImpl);
     return getDbEntityManager().selectList("selectEventSubscriptionByQueryCriteria", eventSubscriptionQueryImpl, page);
   }
 
@@ -88,7 +89,7 @@ public class EventSubscriptionManager extends AbstractManager {
   @SuppressWarnings("unchecked")
   public List<SignalEventSubscriptionEntity> findSignalEventSubscriptionsByEventName(String eventName) {
     final String query = "selectSignalEventSubscriptionsByEventName";
-    Set<SignalEventSubscriptionEntity> eventSubscriptions = new HashSet<SignalEventSubscriptionEntity>( getDbEntityManager().selectList(query, eventName));
+    Set<SignalEventSubscriptionEntity> eventSubscriptions = new HashSet<SignalEventSubscriptionEntity>( getDbEntityManager().selectList(query, configureParameterizedQuery(eventName)));
 
     // add events created in this command (not visible yet in query)
     for (SignalEventSubscriptionEntity entity : createdSignalSubscriptions) {
@@ -114,6 +115,27 @@ public class EventSubscriptionManager extends AbstractManager {
     // add events created in this command (not visible yet in query)
     for (SignalEventSubscriptionEntity entity : createdSignalSubscriptions) {
       if(eventName.equals(entity.getEventName()) && hasTenantId(entity, tenantId)) {
+        eventSubscriptions.add(entity);
+      }
+    }
+    return new ArrayList<SignalEventSubscriptionEntity>(eventSubscriptions);
+  }
+
+  /**
+   * Find all signal event subscriptions with the given event name which belongs to the given tenant or no tenant.
+   */
+  @SuppressWarnings("unchecked")
+  public List<SignalEventSubscriptionEntity> findSignalEventSubscriptionsByEventNameAndTenantIdIncludeWithoutTenantId(String eventName, String tenantId) {
+    final String query = "selectSignalEventSubscriptionsByEventNameAndTenantIdIncludeWithoutTenantId";
+
+    Map<String, Object> parameter = new HashMap<String, Object>();
+    parameter.put("eventName", eventName);
+    parameter.put("tenantId", tenantId);
+    Set<SignalEventSubscriptionEntity> eventSubscriptions = new HashSet<SignalEventSubscriptionEntity>( getDbEntityManager().selectList(query, parameter));
+
+    // add events created in this command (not visible yet in query)
+    for (SignalEventSubscriptionEntity entity : createdSignalSubscriptions) {
+      if(eventName.equals(entity.getEventName()) && (entity.getTenantId() == null || hasTenantId(entity, tenantId))) {
         eventSubscriptions.add(entity);
       }
     }
@@ -242,7 +264,7 @@ public class EventSubscriptionManager extends AbstractManager {
    */
   @SuppressWarnings("unchecked")
   public List<MessageEventSubscriptionEntity> findMessageStartEventSubscriptionByName(String messageName) {
-    return getDbEntityManager().selectList("selectMessageStartEventSubscriptionByName", messageName);
+    return getDbEntityManager().selectList("selectMessageStartEventSubscriptionByName", configureParameterizedQuery(messageName));
   }
 
   /**
@@ -258,8 +280,13 @@ public class EventSubscriptionManager extends AbstractManager {
     return (MessageEventSubscriptionEntity) getDbEntityManager().selectOne("selectMessageStartEventSubscriptionByNameAndTenantId", parameters);
   }
 
-  protected void configureAuthorizationCheck(EventSubscriptionQueryImpl query) {
+  protected void configureQuery(EventSubscriptionQueryImpl query) {
     getAuthorizationManager().configureEventSubscriptionQuery(query);
+    getTenantManager().configureQuery(query);
+  }
+
+  protected ListQueryParameterObject configureParameterizedQuery(Object parameter) {
+    return getTenantManager().configureQuery(parameter);
   }
 
   protected boolean matchesSubscription(EventSubscriptionEntity subscription, String type, String eventName) {

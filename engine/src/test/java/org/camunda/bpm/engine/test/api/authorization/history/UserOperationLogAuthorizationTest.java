@@ -21,6 +21,7 @@ import java.util.Date;
 import java.util.List;
 
 import org.camunda.bpm.engine.AuthorizationException;
+import org.camunda.bpm.engine.ProcessEngineConfiguration;
 import org.camunda.bpm.engine.history.HistoricIncident;
 import org.camunda.bpm.engine.history.HistoricProcessInstance;
 import org.camunda.bpm.engine.history.UserOperationLogQuery;
@@ -32,12 +33,14 @@ import org.camunda.bpm.engine.impl.interceptor.CommandExecutor;
 import org.camunda.bpm.engine.impl.jobexecutor.TimerSuspendProcessDefinitionHandler;
 import org.camunda.bpm.engine.impl.persistence.entity.HistoricIncidentEntity;
 import org.camunda.bpm.engine.runtime.Job;
+import org.camunda.bpm.engine.test.RequiredHistoryLevel;
 import org.camunda.bpm.engine.test.api.authorization.AuthorizationTest;
 
 /**
  * @author Roman Smirnov
  *
  */
+@RequiredHistoryLevel(ProcessEngineConfiguration.HISTORY_FULL)
 public class UserOperationLogAuthorizationTest extends AuthorizationTest {
 
   protected static final String ONE_TASK_PROCESS_KEY = "oneTaskProcess";
@@ -46,6 +49,7 @@ public class UserOperationLogAuthorizationTest extends AuthorizationTest {
 
   protected String deploymentId;
 
+  @Override
   public void setUp() throws Exception {
     deploymentId = createDeployment(null,
         "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml",
@@ -54,6 +58,7 @@ public class UserOperationLogAuthorizationTest extends AuthorizationTest {
     super.setUp();
   }
 
+  @Override
   public void tearDown() {
     super.tearDown();
     deleteDeployment(deploymentId);
@@ -127,6 +132,22 @@ public class UserOperationLogAuthorizationTest extends AuthorizationTest {
     setAssignee(taskId, "demo");
 
     createGrantAuthorization(PROCESS_DEFINITION, ANY, userId, READ_HISTORY);
+
+    // when
+    UserOperationLogQuery query = historyService.createUserOperationLogQuery();
+
+    // then
+    verifyQueryResults(query, 1);
+  }
+
+  public void testQuerySetAssigneeTaskUserOperationLogWithMultiple() {
+    // given
+    startProcessInstanceByKey(ONE_TASK_PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+    setAssignee(taskId, "demo");
+
+    createGrantAuthorization(PROCESS_DEFINITION, ANY, userId, READ_HISTORY);
+    createGrantAuthorization(PROCESS_DEFINITION, ONE_TASK_PROCESS_KEY, userId, READ_HISTORY);
 
     // when
     UserOperationLogQuery query = historyService.createUserOperationLogQuery();

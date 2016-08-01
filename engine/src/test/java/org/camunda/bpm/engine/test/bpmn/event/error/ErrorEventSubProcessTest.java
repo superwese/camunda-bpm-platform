@@ -279,7 +279,7 @@ public class ErrorEventSubProcessTest extends PluggableProcessEngineTestCase {
   }
   
   @Deployment
-  public void testCatchErrorEventSubprocessSetErrorCodeVariable(){
+  public void testCatchErrorEventSubprocessSetErrorVariables(){
     runtimeService.startProcessInstanceByKey("Process_1");
     //the name used in "camunda:errorCodeVariable" in the BPMN
     String variableName = "errorCode";
@@ -289,11 +289,12 @@ public class ErrorEventSubProcessTest extends PluggableProcessEngineTestCase {
     //the code we gave the thrown error
     Object errorCode = "error";
     assertThat(errorVariable.getValue(), is(errorCode));
+
   }
   
   @Deployment(resources={
       "org/camunda/bpm/engine/test/bpmn/event/error/ThrowErrorProcess.bpmn",
-      "org/camunda/bpm/engine/test/bpmn/event/error/ErrorEventSubProcessTest.testCatchErrorFromCallActivitySetsErrorVariable.bpmn"
+      "org/camunda/bpm/engine/test/bpmn/event/error/ErrorEventSubProcessTest.testCatchErrorFromCallActivitySetsErrorVariables.bpmn"
   })
   public void testCatchErrorFromCallActivitySetsErrorVariable(){
     runtimeService.startProcessInstanceByKey("Process_1");
@@ -321,6 +322,70 @@ public class ErrorEventSubProcessTest extends PluggableProcessEngineTestCase {
     Object errorCode = "errorCode";
     VariableInstance errorVariable = runtimeService.createVariableInstanceQuery().variableName(variableName).singleResult();
     assertThat(errorVariable.getValue(), is(errorCode));
+
+    errorVariable = runtimeService.createVariableInstanceQuery().variableName("errorMessageVariable").singleResult();
+    assertThat(errorVariable.getValue(), is((Object)"ouch!"));
   }
 
+  @Deployment(resources={
+      "org/camunda/bpm/engine/test/bpmn/event/error/ErrorEventSubProcessTest.testThrowErrorInLoop.bpmn20.xml"
+    })
+  public void testShouldNotThrowErrorInLoop(){
+    runtimeService.startProcessInstanceByKey("looping-error"); 
+    
+    Task task = taskService.createTaskQuery().singleResult();
+    assertEquals("WaitState", task.getName());
+    taskService.complete(task.getId());
+
+    assertEquals("ErrorHandlingUserTask", taskService.createTaskQuery().singleResult().getName());
+  }
+
+  @Deployment(resources={
+      "org/camunda/bpm/engine/test/bpmn/event/error/ErrorEventSubProcessTest.testThrowErrorInLoopWithCallActivity.bpmn20.xml",
+      "org/camunda/bpm/engine/test/bpmn/event/error/ThrowErrorToCallActivity.bpmn20.xml"
+    })
+  public void testShouldNotThrowErrorInLoopWithCallActivity(){
+    runtimeService.startProcessInstanceByKey("CallActivityErrorInLoop"); 
+    
+    Task task = taskService.createTaskQuery().singleResult();
+    assertEquals("ErrorLog", task.getName());
+    taskService.complete(task.getId());
+
+    assertEquals("ErrorHandlingUserTask", taskService.createTaskQuery().singleResult().getName());
+  }
+
+  @Deployment(resources={
+      "org/camunda/bpm/engine/test/bpmn/event/error/ErrorEventSubProcessTest.testThrowErrorInLoopWithMultipleSubProcess.bpmn20.xml",
+    })
+  public void testShouldNotThrowErrorInLoopForMultipleSubProcess(){
+    runtimeService.startProcessInstanceByKey("looping-error"); 
+
+    Task task = taskService.createTaskQuery().singleResult();
+    assertEquals("LoggerTask", task.getName());
+    taskService.complete(task.getId());
+    
+    assertEquals("ErrorHandlingTask", taskService.createTaskQuery().singleResult().getName());
+  }
+
+  @Deployment(resources={
+      "org/camunda/bpm/engine/test/bpmn/event/error/ErrorEventSubProcessTest.testThrowErrorInLoopFromCallActivityToEventSubProcess.bpmn20.xml",
+      "org/camunda/bpm/engine/test/bpmn/event/error/ThrowErrorToCallActivity.bpmn20.xml"
+    })
+  public void FAILING_testShouldNotThrowErrorInLoopFromCallActivityToEventSubProcess(){
+    runtimeService.startProcessInstanceByKey("Process_1"); 
+    
+    Task task = taskService.createTaskQuery().singleResult();
+    assertEquals("userTask", task.getName());
+    taskService.complete(task.getId());
+
+    task = taskService.createTaskQuery().singleResult();
+    assertEquals("ErrorLog", task.getName());
+    taskService.complete(task.getId());
+
+    // TODO: Loop exists when error thrown from call activity to event sub process
+    // as they both have different process definition - CAM-6212
+    assertEquals("BoundaryEventTask", taskService.createTaskQuery().singleResult().getName());
+  }
+
+  
 }

@@ -43,6 +43,7 @@ public class DecisionInstanceHistoryTest extends ResourceProcessEngineTestCase {
 
     RecordHistoryLevel.ProducedHistoryEvent producedHistoryEvent = producedHistoryEvents.get(0);
     assertEquals(HistoryEventTypes.DMN_DECISION_EVALUATE, producedHistoryEvent.eventType);
+
     DecisionDefinition entity = (DecisionDefinition) producedHistoryEvent.entity;
     assertNotNull(entity);
     assertEquals(decisionDefinition.getId(), entity.getId());

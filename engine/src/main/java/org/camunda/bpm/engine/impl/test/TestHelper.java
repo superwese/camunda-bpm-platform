@@ -14,6 +14,7 @@
 package org.camunda.bpm.engine.impl.test;
 
 import java.io.InputStream;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -33,12 +34,14 @@ import org.camunda.bpm.engine.impl.ProcessEngineLogger;
 import org.camunda.bpm.engine.impl.SchemaOperationsProcessEngineBuild;
 import org.camunda.bpm.engine.impl.application.ProcessApplicationManager;
 import org.camunda.bpm.engine.impl.bpmn.deployer.BpmnDeployer;
+import org.camunda.bpm.engine.impl.cfg.IdGenerator;
 import org.camunda.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl;
 import org.camunda.bpm.engine.impl.cmmn.deployer.CmmnDeployer;
 import org.camunda.bpm.engine.impl.cmmn.entity.repository.CaseDefinitionEntity;
+import org.camunda.bpm.engine.impl.db.DbIdGenerator;
 import org.camunda.bpm.engine.impl.db.PersistenceSession;
 import org.camunda.bpm.engine.impl.db.entitymanager.DbEntityManager;
-import org.camunda.bpm.engine.impl.dmn.deployer.DmnDeployer;
+import org.camunda.bpm.engine.impl.dmn.deployer.DecisionDefinitionDeployer;
 import org.camunda.bpm.engine.impl.history.HistoryLevel;
 import org.camunda.bpm.engine.impl.interceptor.Command;
 import org.camunda.bpm.engine.impl.interceptor.CommandContext;
@@ -50,9 +53,11 @@ import org.camunda.bpm.engine.impl.util.ClassNameUtil;
 import org.camunda.bpm.engine.impl.util.ReflectUtil;
 import org.camunda.bpm.engine.repository.DeploymentBuilder;
 import org.camunda.bpm.engine.test.Deployment;
+import org.camunda.bpm.engine.test.RequiredHistoryLevel;
 import org.camunda.bpm.model.bpmn.BpmnModelInstance;
 import org.camunda.bpm.model.cmmn.CmmnModelInstance;
 import org.junit.Assert;
+import org.junit.runner.Description;
 import org.slf4j.Logger;
 
 
@@ -76,7 +81,7 @@ public abstract class TestHelper {
   static {
     RESOURCE_SUFFIXES.addAll(Arrays.asList(BpmnDeployer.BPMN_RESOURCE_SUFFIXES));
     RESOURCE_SUFFIXES.addAll(Arrays.asList(CmmnDeployer.CMMN_RESOURCE_SUFFIXES));
-    RESOURCE_SUFFIXES.addAll(Arrays.asList(DmnDeployer.DMN_RESOURCE_SUFFIXES));
+    RESOURCE_SUFFIXES.addAll(Arrays.asList(DecisionDefinitionDeployer.DMN_RESOURCE_SUFFIXES));
   }
 
   /**
@@ -93,7 +98,7 @@ public abstract class TestHelper {
     boolean onMethod = true;
 
     try {
-      method = testClass.getDeclaredMethod(methodName, (Class<?>[])null);
+      method = getMethod(testClass, methodName);
     } catch (Exception e) {
       if (deploymentAnnotation == null) {
         // we have neither the annotation, nor can look it up from the method
@@ -107,7 +112,15 @@ public abstract class TestHelper {
     // if not found on method, try on class level
     if (deploymentAnnotation == null) {
       onMethod = false;
-      deploymentAnnotation = testClass.getAnnotation(Deployment.class);
+      Class<?> lookForAnnotationClass = testClass;
+      while (lookForAnnotationClass != Object.class) {
+        deploymentAnnotation = lookForAnnotationClass.getAnnotation(Deployment.class);
+        if (deploymentAnnotation != null) {
+          testClass = lookForAnnotationClass;
+          break;
+        }
+        lookForAnnotationClass = lookForAnnotationClass.getSuperclass();
+      }
     }
 
     if (deploymentAnnotation != null) {
@@ -176,6 +189,73 @@ public abstract class TestHelper {
     return r.append("." + suffix).toString();
   }
 
+  public static boolean annotationRequiredHistoryLevelCheck(ProcessEngine processEngine, Description description) {
+    RequiredHistoryLevel annotation = description.getAnnotation(RequiredHistoryLevel.class);
+
+    if (annotation != null) {
+      return historyLevelCheck(processEngine, annotation);
+
+    } else {
+      return annotationRequiredHistoryLevelCheck(processEngine, description.getTestClass(), description.getMethodName());
+    }
+  }
+
+  private static boolean historyLevelCheck(ProcessEngine processEngine, RequiredHistoryLevel annotation) {
+    ProcessEngineConfigurationImpl processEngineConfiguration = (ProcessEngineConfigurationImpl) processEngine.getProcessEngineConfiguration();
+
+    HistoryLevel requiredHistoryLevel = getHistoryLevelForName(processEngineConfiguration.getHistoryLevels(), annotation.value());
+    HistoryLevel currentHistoryLevel = processEngineConfiguration.getHistoryLevel();
+
+    return currentHistoryLevel.getId() >= requiredHistoryLevel.getId();
+  }
+
+  private static HistoryLevel getHistoryLevelForName(List<HistoryLevel> historyLevels, String name) {
+    for (HistoryLevel historyLevel : historyLevels) {
+
+      if (historyLevel.getName().equalsIgnoreCase(name)) {
+        return historyLevel;
+      }
+    }
+    throw new IllegalArgumentException("Unknown history level: " + name);
+  }
+
+  public static boolean annotationRequiredHistoryLevelCheck(ProcessEngine processEngine, Class<?> testClass, String methodName) {
+    RequiredHistoryLevel annotation = getAnnotation(processEngine, testClass, methodName, RequiredHistoryLevel.class);
+
+    if (annotation != null) {
+      return historyLevelCheck(processEngine, annotation);
+    } else {
+      return true;
+    }
+  }
+
+  private static <T extends Annotation> T getAnnotation(ProcessEngine processEngine, Class<?> testClass, String methodName, Class<T> annotationClass) {
+    Method method = null;
+    T annotation = null;
+
+    try {
+      method = getMethod(testClass, methodName);
+      annotation = method.getAnnotation(annotationClass);
+    } catch (Exception e) {
+      LOG.debug("Cannot determine RequiredHistoryLevel annotation on test method '" + methodName
+          + "' of class " + testClass.getName(), e);
+      // - ignore if we cannot access the method
+      // - just try again with the class
+      // => can for example be the case for parameterized tests where methodName does not correspond to the actual method name
+      //    (note that method-level annotations still work in this
+      //     scenario due to Description#getAnnotation in annotationRequiredHistoryLevelCheck)
+    }
+
+    // if not found on method, try on class level
+    if (annotation == null) {
+      annotation = testClass.getAnnotation(annotationClass);
+    }
+    return annotation;
+  }
+
+  protected static Method getMethod(Class<?> clazz, String methodName) throws SecurityException, NoSuchMethodException {
+    return clazz.getMethod(methodName, (Class<?>[]) null);
+  }
 
   /**
    * Ensures that the deployment cache and database is clean after a test. If not the cache
@@ -413,6 +493,14 @@ public abstract class TestHelper {
       .isEmpty();
   }
 
+  public static void resetIdGenerator(ProcessEngineConfigurationImpl processEngineConfiguration) {
+    IdGenerator idGenerator = processEngineConfiguration.getIdGenerator();
+
+    if (idGenerator instanceof DbIdGenerator) {
+      ((DbIdGenerator) idGenerator).reset();
+    }
+  }
+
   private static class InteruptTask extends TimerTask {
     protected boolean timeLimitExceeded = false;
     protected Thread thread;
@@ -512,5 +600,8 @@ public abstract class TestHelper {
       }
     }
   }
+
+
+
 
 }

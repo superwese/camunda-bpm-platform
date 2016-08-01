@@ -33,7 +33,8 @@ public class DashboardIT extends AbstractWebappUiIntegrationTest {
     WebElement submit = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("button[type=\"submit\"]")));
     submit.submit();
 
-    wait.until(ExpectedConditions.textToBePresentInElementLocated(By.tagName("h3"), "1 process definition deployed"));
+    wait.until(ExpectedConditions.textToBePresentInElementLocated(By.cssSelector(".prop-definitions > .value"), "1"));
+    wait.until(ExpectedConditions.textToBePresentInElementLocated(By.cssSelector(".prop-definitions > a"), "Process definition"));
 
     wait.until(currentURIIs(new URI(appUrl + "/default/#/dashboard")));
   }

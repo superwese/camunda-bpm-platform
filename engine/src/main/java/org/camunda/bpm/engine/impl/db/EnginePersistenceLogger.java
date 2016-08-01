@@ -23,6 +23,7 @@ import org.camunda.bpm.engine.OptimisticLockingException;
 import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.SuspendedEntityInteractionException;
 import org.camunda.bpm.engine.WrongDbException;
+import org.camunda.bpm.engine.authorization.Groups;
 import org.camunda.bpm.engine.exception.NotValidException;
 import org.camunda.bpm.engine.impl.ProcessEngineLogger;
 import org.camunda.bpm.engine.impl.db.entitymanager.cache.CachedDbEntity;
@@ -302,9 +303,9 @@ public class EnginePersistenceLogger extends ProcessEngineLogger {
       exceptionMessage("028", "Illegal value '{}' for userId for GLOBAL authorization. Must be '{}'", id, expected));
   }
 
-  public AuthorizationException notAMemberException(String id, String group) {
+  public AuthorizationException requiredCamundaAdminException() {
     return new AuthorizationException(
-      exceptionMessage("029", "The user with id '{}' is not a member of the group with id '{}'", id, group));
+      exceptionMessage("029", "Required authenticated group '{}'.", Groups.CAMUNDA_ADMIN));
   }
 
   public void createChildExecution(ExecutionEntity child, ExecutionEntity parent) {
@@ -591,6 +592,14 @@ public class EnginePersistenceLogger extends ProcessEngineLogger {
         "075",
         "Cannot resolve a unique case definition for key '{}' because it exists for multiple tenants.",
         caseDefinitionKey
+        ));
+  }
+
+  public ProcessEngineException deleteProcessDefinitionWithProcessInstancesException(String processDefinitionId, Long processInstanceCount) {
+    return new ProcessEngineException(exceptionMessage(
+        "076",
+        "Deletion of process definition without cascading failed. Process definition with id: {} can't be deleted, since there exists {} dependening process instances.",
+        processDefinitionId, processInstanceCount
         ));
   }
 

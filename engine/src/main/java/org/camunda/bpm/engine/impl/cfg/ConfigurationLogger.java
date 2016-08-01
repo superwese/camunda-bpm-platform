@@ -58,4 +58,10 @@ public class ConfigurationLogger extends ProcessEngineLogger {
             "Consider using 'ACTIVITY' instead.");
   }
 
+  public ProcessEngineException invalidConfigDefaultUserPermissionNameForTask(String defaultUserPermissionNameForTask, String[] validPermissionNames) {
+    return new ProcessEngineException(exceptionMessage(
+        "007",
+        "Invalid value '{}' for configuration property 'defaultUserPermissionNameForTask'. Valid values are: '{}'", defaultUserPermissionNameForTask, validPermissionNames));
+  }
+
 }

@@ -37,7 +37,8 @@
         SUPER_CASE_INSTANCE_ID_,
         CASE_INST_ID_,
         DELETE_REASON_,
-        TENANT_ID_
+        TENANT_ID_,
+        STATE_
       ) values (
         #{id ,jdbcType=VARCHAR},
         #{processInstanceId, jdbcType=VARCHAR},
@@ -54,7 +55,8 @@
         #{superCaseInstanceId, jdbcType=VARCHAR},
         #{caseInstanceId, jdbcType=VARCHAR},
         #{deleteReason, jdbcType=VARCHAR},
-        #{tenantId, jdbcType=VARCHAR}
+        #{tenantId, jdbcType=VARCHAR},
+        #{state, jdbcType=VARCHAR}
       )
   </insert>
 
@@ -63,8 +65,10 @@
   <update id="updateHistoricProcessInstanceEvent" parameterType="org.camunda.bpm.engine.impl.persistence.entity.HistoricProcessInstanceEntity">
     update ${prefix}ACT_HI_PROCINST set
       PROC_DEF_ID_ = #{processDefinitionId, jdbcType=VARCHAR},
+      PROC_DEF_KEY_ = #{processDefinitionKey, jdbcType=VARCHAR},
       END_ACT_ID_ = #{endActivityId, jdbcType=VARCHAR},
-      DELETE_REASON_ = #{deleteReason, jdbcType=VARCHAR}
+      DELETE_REASON_ = #{deleteReason, jdbcType=VARCHAR},
+      STATE_ = #{state, jdbcType=VARCHAR}
 
       <if test="endTime!=null">
         , END_TIME_ = #{endTime, jdbcType=TIMESTAMP}
@@ -106,6 +110,7 @@
     <result property="caseInstanceId" column="CASE_INST_ID_" jdbcType="VARCHAR" />
     <result property="deleteReason" column="DELETE_REASON_" jdbcType="VARCHAR" />
     <result property="tenantId" column="TENANT_ID_" jdbcType="VARCHAR" />
+    <result property="state" column="STATE_" jdbcType="VARCHAR" />
   </resultMap>
 
   <!-- HISTORIC PROCESS INSTANCE SELECT -->
@@ -123,7 +128,7 @@
   <select id="selectHistoricProcessInstancesByQueryCriteria" parameterType="org.camunda.bpm.engine.impl.HistoricProcessInstanceQueryImpl" resultMap="historicProcessInstanceResultMap">
   	<include refid="org.camunda.bpm.engine.impl.persistence.entity.Commons.bindOrderBy"/>
     ${limitBefore}
-    select RES.* 
+    select ${distinct} RES.*
     ${limitBetween}
     <include refid="selectHistoricProcessInstancesByQueryCriteriaSql"/>
     ${orderBy}
@@ -137,8 +142,25 @@
 
   <sql id="selectHistoricProcessInstancesByQueryCriteriaSql">
     from ${prefix}ACT_HI_PROCINST RES
+
+    <if test="authCheck.isAuthorizationCheckEnabled &amp;&amp; authCheck.authUserId != null">
+      LEFT JOIN (
+        SELECT DISTINCT
+            SELF.PROC_DEF_KEY_ AS KEY_
+        FROM
+          ${prefix}ACT_HI_PROCINST SELF
+        WHERE
+            <include refid="org.camunda.bpm.engine.impl.persistence.entity.AuthorizationEntity.querySingleAuthorizationCheck" />
+      ) AUTH
+      ON AUTH.KEY_ = RES.PROC_DEF_KEY_
+    </if>
+
     <if test="processKeyNotIn != null || processDefinitionKey != null || processDefinitionName != null || processDefinitionNameLike != null">
       inner join ${prefix}ACT_RE_PROCDEF DEF on RES.PROC_DEF_ID_ = DEF.ID_
+    </if>
+
+    <if test="withIncidents || incidentMessage != null || incidentMessageLike != null">
+      inner join ${prefix}ACT_HI_INCIDENT INC on RES.PROC_INST_ID_ = INC.PROC_INST_ID_
     </if>
     <where>
       <if test="processInstanceId != null">
@@ -215,6 +237,15 @@
       <if test="finished">
         and RES.END_TIME_ is not NULL
       </if>
+
+      <if test="incidentMessage != null">
+        and INC.INCIDENT_MSG_ = #{incidentMessage}
+      </if>
+
+      <if test="incidentMessageLike != null">
+        and INC.INCIDENT_MSG_ like #{incidentMessageLike}
+      </if>
+
       <if test="startedBy != null">
         and RES.START_USER_ID_ = #{startedBy}
       </if>
@@ -243,7 +274,7 @@
         <bind name="varTypeField" value="'VAR_TYPE_'"/>
         <bind name="varPrefix" value="''"/>
         <if test="queryVariableValue.valueConditions != null">
-          and 
+          and
           <include refid="org.camunda.bpm.engine.impl.persistence.entity.Commons.variableValueConditions"/>
         </if>
         )
@@ -256,7 +287,11 @@
         </foreach>
       </if>
 
-      <include refid="org.camunda.bpm.engine.impl.persistence.entity.AuthorizationEntity.queryAuthorizationCheck" />
+      <if test="authCheck.isAuthorizationCheckEnabled &amp;&amp; authCheck.authUserId != null">
+        and ((RES.PROC_DEF_KEY_ is not null and AUTH.KEY_ is not null) or RES.PROC_DEF_KEY_ is null)
+      </if>
+
+      <include refid="org.camunda.bpm.engine.impl.persistence.entity.TenantEntity.queryTenantCheck" />
 
     </where>
   </sql>

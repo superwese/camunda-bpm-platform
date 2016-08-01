@@ -27,6 +27,12 @@ import org.camunda.bpm.engine.rest.exception.RestException;
 import org.camunda.bpm.engine.runtime.MessageCorrelationBuilder;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
+import java.util.List;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+import org.camunda.bpm.engine.rest.dto.message.MessageCorrelationResultDto;
+import org.camunda.bpm.engine.runtime.MessageCorrelationResult;
 
 public class MessageRestServiceImpl extends AbstractRestProcessEngineAware implements MessageRestService {
 
@@ -35,7 +41,7 @@ public class MessageRestServiceImpl extends AbstractRestProcessEngineAware imple
   }
 
   @Override
-  public void deliverMessage(CorrelationMessageDto messageDto) {
+  public Response deliverMessage(CorrelationMessageDto messageDto) {
     if (messageDto.getMessageName() == null) {
       throw new InvalidRequestException(Status.BAD_REQUEST, "No message name supplied");
     }
@@ -43,15 +49,18 @@ public class MessageRestServiceImpl extends AbstractRestProcessEngineAware imple
       throw new InvalidRequestException(Status.BAD_REQUEST, "Parameter 'tenantId' cannot be used together with parameter 'withoutTenantId'.");
     }
 
+    List<MessageCorrelationResultDto> resultDtos = new ArrayList<MessageCorrelationResultDto>();
     try {
       MessageCorrelationBuilder correlation = createMessageCorrelationBuilder(messageDto);
-
       if (!messageDto.isAll()) {
-        correlation.correlate();
+        MessageCorrelationResult result = correlation.correlateWithResult();
+        resultDtos.add(MessageCorrelationResultDto.fromMessageCorrelationResult(result));
       } else {
-        correlation.correlateAll();
+        List<MessageCorrelationResult> results = correlation.correlateAllWithResult();
+        for (MessageCorrelationResult result : results) {
+          resultDtos.add(MessageCorrelationResultDto.fromMessageCorrelationResult(result));
+        }
       }
-
     } catch (RestException e) {
       String errorMessage = String.format("Cannot deliver message: %s", e.getMessage());
       throw new InvalidRequestException(e.getStatus(), e, errorMessage);
@@ -59,6 +68,16 @@ public class MessageRestServiceImpl extends AbstractRestProcessEngineAware imple
     } catch (MismatchingMessageCorrelationException e) {
       throw new RestException(Status.BAD_REQUEST, e);
     }
+    return createResponse(resultDtos, messageDto);
+  }
+
+
+  protected Response createResponse(List<MessageCorrelationResultDto> resultDtos, CorrelationMessageDto messageDto) {
+    Response.ResponseBuilder response = Response.noContent();
+    if (messageDto.isResultEnabled()) {
+      response = Response.ok(resultDtos, MediaType.APPLICATION_JSON);
+    }
+    return response.build();
   }
 
   protected MessageCorrelationBuilder createMessageCorrelationBuilder(CorrelationMessageDto messageDto) {
@@ -69,9 +88,14 @@ public class MessageRestServiceImpl extends AbstractRestProcessEngineAware imple
     Map<String, Object> processVariables = VariableValueDto.toMap(messageDto.getProcessVariables(), processEngine, objectMapper);
 
     MessageCorrelationBuilder builder = runtimeService
-        .createMessageCorrelation(messageDto.getMessageName())
-        .setVariables(processVariables)
-        .processInstanceBusinessKey(messageDto.getBusinessKey());
+        .createMessageCorrelation(messageDto.getMessageName());
+
+    if (processVariables != null) {
+      builder.setVariables(processVariables);
+    }
+    if (messageDto.getBusinessKey() != null) {
+      builder.processInstanceBusinessKey(messageDto.getBusinessKey());
+    }
 
     if (correlationKeys != null && !correlationKeys.isEmpty()) {
       for (Entry<String, Object> correlationKey  : correlationKeys.entrySet()) {

@@ -15,13 +15,12 @@ package org.camunda.bpm.engine.impl.jobexecutor;
 import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Date;
-import java.util.List;
+import java.util.Map;
 
 import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.delegate.Expression;
 import org.camunda.bpm.engine.delegate.VariableScope;
 import org.camunda.bpm.engine.impl.bpmn.helper.BpmnProperties;
-import org.camunda.bpm.engine.impl.bpmn.parser.BpmnParse;
 import org.camunda.bpm.engine.impl.calendar.BusinessCalendar;
 import org.camunda.bpm.engine.impl.context.Context;
 import org.camunda.bpm.engine.impl.el.StartProcessVariableScope;
@@ -45,6 +44,8 @@ public class TimerDeclarationImpl extends JobDeclaration<ExecutionEntity, TimerE
   protected boolean isInterruptingTimer; // For boundary timers
   protected String eventScopeActivityId = null;
   protected Boolean isParallelMultiInstance;
+
+  protected String rawJobHandlerConfiguration;
 
   public TimerDeclarationImpl(Expression expression, TimerDeclarationType type, String jobHandlerType) {
     super(jobHandlerType);
@@ -82,14 +83,21 @@ public class TimerDeclarationImpl extends JobDeclaration<ExecutionEntity, TimerE
     return timer;
   }
 
-  protected void postInitialize(ExecutionEntity context, TimerEntity job) {
+  public void setRawJobHandlerConfiguration(String rawJobHandlerConfiguration) {
+    this.rawJobHandlerConfiguration = rawJobHandlerConfiguration;
+  }
+
+  public void updateJob(TimerEntity timer) {
+    initializeConfiguration(timer.getExecution(), timer);
+  }
+
+  protected void initializeConfiguration(ExecutionEntity context, TimerEntity job) {
     BusinessCalendar businessCalendar = Context
         .getProcessEngineConfiguration()
         .getBusinessCalendarManager()
         .getBusinessCalendar(type.calendarName);
 
     if (description==null) {
-      // Prevent NPE from happening in the next line
       throw new ProcessEngineException("Timer '"+context.getActivityId()+"' was not configured with a valid duration/time");
     }
 
@@ -128,6 +136,10 @@ public class TimerDeclarationImpl extends JobDeclaration<ExecutionEntity, TimerE
         job.setRepeat(prepared);
       }
     }
+  }
+
+  protected void postInitialize(ExecutionEntity execution, TimerEntity timer) {
+    initializeConfiguration(execution, timer);
   }
 
   protected String prepareRepeat(String dueDate) {
@@ -170,13 +182,22 @@ public class TimerDeclarationImpl extends JobDeclaration<ExecutionEntity, TimerE
     return context;
   }
 
-  public static List<TimerDeclarationImpl> getDeclarationsForScope(PvmScope scope) {
-    List<TimerDeclarationImpl> result = scope.getProperties().get(BpmnProperties.TIMER_DECLARATIONS);
+  @Override
+  protected JobHandlerConfiguration resolveJobHandlerConfiguration(ExecutionEntity context) {
+    return resolveJobHandler().newConfiguration(rawJobHandlerConfiguration);
+  }
+
+  public static Map<String, TimerDeclarationImpl> getDeclarationsForScope(PvmScope scope) {
+    if (scope == null) {
+      return Collections.emptyMap();
+    }
+
+    Map<String, TimerDeclarationImpl> result = scope.getProperties().get(BpmnProperties.TIMER_DECLARATIONS);
     if (result != null) {
       return result;
     }
     else {
-      return Collections.emptyList();
+      return Collections.emptyMap();
     }
   }
 

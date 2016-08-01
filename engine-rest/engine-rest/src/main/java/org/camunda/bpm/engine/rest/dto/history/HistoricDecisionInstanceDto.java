@@ -40,9 +40,14 @@ public class HistoricDecisionInstanceDto {
   protected String caseInstanceId;
   protected String activityId;
   protected String activityInstanceId;
+  protected String userId;
   protected List<HistoricDecisionInputInstanceDto> inputs;
   protected List<HistoricDecisionOutputInstanceDto> outputs;
   protected Double collectResultValue;
+  protected String rootDecisionInstanceId;
+  protected String decisionRequirementsDefinitionId;
+  protected String decisionRequirementsDefinitionKey;
+  protected String tenantId;
 
   public String getId() {
     return id;
@@ -96,6 +101,10 @@ public class HistoricDecisionInstanceDto {
     return activityInstanceId;
   }
 
+  public String getUserId() {
+    return userId;
+  }
+
   @JsonInclude(Include.NON_NULL)
   public List<HistoricDecisionInputInstanceDto> getInputs() {
     return inputs;
@@ -108,6 +117,22 @@ public class HistoricDecisionInstanceDto {
 
   public Double getCollectResultValue() {
     return collectResultValue;
+  }
+
+  public String getRootDecisionInstanceId() {
+    return rootDecisionInstanceId;
+  }
+
+  public String getTenantId() {
+    return tenantId;
+  }
+
+  public String getDecisionRequirementsDefinitionId() {
+    return decisionRequirementsDefinitionId;
+  }
+
+  public String getDecisionRequirementsDefinitionKey() {
+    return decisionRequirementsDefinitionKey;
   }
 
   public static HistoricDecisionInstanceDto fromHistoricDecisionInstance(HistoricDecisionInstance historicDecisionInstance) {
@@ -126,7 +151,12 @@ public class HistoricDecisionInstanceDto {
     dto.caseInstanceId = historicDecisionInstance.getCaseInstanceId();
     dto.activityId = historicDecisionInstance.getActivityId();
     dto.activityInstanceId = historicDecisionInstance.getActivityInstanceId();
+    dto.userId = historicDecisionInstance.getUserId();
     dto.collectResultValue = historicDecisionInstance.getCollectResultValue();
+    dto.rootDecisionInstanceId = historicDecisionInstance.getRootDecisionInstanceId();
+    dto.decisionRequirementsDefinitionId = historicDecisionInstance.getDecisionRequirementsDefinitionId();
+    dto.decisionRequirementsDefinitionKey = historicDecisionInstance.getDecisionRequirementsDefinitionKey();
+    dto.tenantId = historicDecisionInstance.getTenantId();
 
     try {
       List<HistoricDecisionInputInstanceDto> inputs = new ArrayList<HistoricDecisionInputInstanceDto>();

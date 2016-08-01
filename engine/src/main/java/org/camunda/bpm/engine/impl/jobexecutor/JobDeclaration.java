@@ -12,6 +12,8 @@
  */
 package org.camunda.bpm.engine.impl.jobexecutor;
 
+import static org.camunda.bpm.engine.impl.util.EnsureUtil.ensureNotNull;
+
 import java.io.Serializable;
 import java.util.Date;
 
@@ -44,7 +46,7 @@ public abstract class JobDeclaration<S, T extends JobEntity> implements Serializ
   protected String jobDefinitionId;
 
   protected String jobHandlerType;
-  protected String jobHandlerConfiguration;
+  protected JobHandlerConfiguration jobHandlerConfiguration;
   protected String jobConfiguration;
 
   protected boolean exclusive = JobEntity.DEFAULT_EXCLUSIVE;
@@ -61,7 +63,6 @@ public abstract class JobDeclaration<S, T extends JobEntity> implements Serializ
 
   /**
    *
-   * @param execution can be null in case of a timer start event.
    * @return the created Job instances
    */
   public T createJobInstance(S context) {
@@ -95,15 +96,25 @@ public abstract class JobDeclaration<S, T extends JobEntity> implements Serializ
     job.setRetries(resolveRetries(context));
     job.setDuedate(resolveDueDate(context));
 
+
+    // contentExecution can be null in case of a timer start event or
+    // and batch jobs unrelated to executions
     ExecutionEntity contextExecution = resolveExecution(context);
 
     if (Context.getProcessEngineConfiguration().isProducePrioritizedJobs()) {
       long priority = Context
           .getProcessEngineConfiguration()
           .getJobPriorityProvider()
-          .determinePriority(contextExecution, this);
+          .determinePriority(contextExecution, this, jobDefinitionId);
 
       job.setPriority(priority);
+    }
+
+    if (contextExecution != null) {
+      // in case of shared process definitions, the job definitions have no tenant id.
+      // To distinguish jobs between tenants and enable the tenant check for the job executor,
+      // use the tenant id from the execution.
+      job.setTenantId(contextExecution.getTenantId());
     }
 
     postInitialize(context, job);
@@ -117,6 +128,11 @@ public abstract class JobDeclaration<S, T extends JobEntity> implements Serializ
   protected void postInitialize(S context, T job) {
   }
 
+  /**
+   * Returns the execution in which context the job is created. The execution
+   * is used to determine the job's priority based on a BPMN activity
+   * the execution is currently executing. May be null.
+   */
   protected abstract ExecutionEntity resolveExecution(S context);
 
   protected abstract T newJobInstance(S context);
@@ -139,21 +155,18 @@ public abstract class JobDeclaration<S, T extends JobEntity> implements Serializ
     return jobHandlerType;
   }
 
+  protected JobHandler resolveJobHandler() {
+     JobHandler jobHandler = Context.getProcessEngineConfiguration().getJobHandlers().get(jobHandlerType);
+     ensureNotNull("Cannot find job handler '" + jobHandlerType + "' from job '" + this + "'", "jobHandler", jobHandler);
+
+     return jobHandler;
+  }
+
   protected String resolveJobHandlerType(S context) {
     return jobHandlerType;
   }
 
-  public String getJobHandlerConfiguration() {
-    return jobHandlerConfiguration;
-  }
-
-  protected String resolveJobHandlerConfiguration(S context) {
-    return jobHandlerConfiguration;
-  }
-
-  public void setJobHandlerConfiguration(String jobHandlerConfiguration) {
-    this.jobHandlerConfiguration = jobHandlerConfiguration;
-  }
+  protected abstract JobHandlerConfiguration resolveJobHandlerConfiguration(S context);
 
   protected boolean resolveExclusive(S context) {
     return exclusive;
@@ -179,10 +192,6 @@ public abstract class JobDeclaration<S, T extends JobEntity> implements Serializ
 
   public void setExclusive(boolean exclusive) {
     this.exclusive = exclusive;
-  }
-
-  public void setJobHandlerType(String jobHandlerType) {
-    this.jobHandlerType = jobHandlerType;
   }
 
   public String getActivityId() {

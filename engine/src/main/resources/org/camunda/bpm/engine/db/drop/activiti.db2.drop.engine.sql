@@ -23,7 +23,7 @@ alter table ACT_RU_EXECUTION
 alter table ACT_RU_EXECUTION
     drop foreign key ACT_FK_EXE_SUPER;
 
-alter table ACT_RU_EXECUTION 
+alter table ACT_RU_EXECUTION
     drop foreign key ACT_FK_EXE_PROCDEF;
 
 alter table ACT_RU_IDENTITYLINK
@@ -70,9 +70,24 @@ alter table ACT_RU_INCIDENT
 
 alter table ACT_RU_INCIDENT
     drop foreign key ACT_FK_INC_RCAUSE;
-    
+
+alter table ACT_RU_INCIDENT
+    drop foreign key ACT_FK_INC_JOB_DEF;
+
 alter table ACT_RU_EXT_TASK
     drop foreign key ACT_FK_EXT_TASK_EXE;
+
+alter table ACT_RU_BATCH
+    drop foreign key ACT_FK_BATCH_SEED_JOB_DEF;
+
+alter table ACT_RU_BATCH
+    drop foreign key ACT_FK_BATCH_MONITOR_JOB_DEF;
+
+alter table ACT_RU_BATCH
+    drop foreign key ACT_FK_BATCH_JOB_DEF;
+
+alter table ACT_RU_EXT_TASK
+    drop foreign key ACT_FK_EXT_TASK_ERROR_DETAILS;
 
 drop index ACT_IDX_EVENT_SUBSCR_CONFIG_;
 drop index ACT_IDX_ATHRZ_PROCEDEF;
@@ -90,6 +105,7 @@ drop index ACT_IDX_INCIDENT_PROCINST;
 drop index ACT_IDX_INCIDENT_PROC_DEF_ID;
 drop index ACT_IDX_INCIDENT_CAUSE;
 drop index ACT_IDX_INCIDENT_ROOT_CAUSE;
+drop index ACT_IDX_INCIDENT_JOB_DEF;
 drop index ACT_IDX_JOB_EXCEPTION_STACK;
 drop index ACT_IDX_VARIABLE_BA;
 drop index ACT_IDX_VARIABLE_EXEC;
@@ -110,6 +126,7 @@ drop index ACT_IDX_EVENT_SUBSCR_EVT_NAME;
 drop index ACT_IDX_PROCDEF_DEPLOYMENT_ID;
 
 drop index ACT_IDX_EXT_TASK_TENANT_ID;
+drop index ACT_IDX_EXT_TASK_PRIORITY;
 drop index ACT_IDX_INC_TENANT_ID;
 drop index ACT_IDX_JOBDEF_TENANT_ID;
 drop index ACT_IDX_JOB_TENANT_ID;
@@ -119,7 +136,16 @@ drop index ACT_IDX_TASK_TENANT_ID;
 drop index ACT_IDX_EXEC_TENANT_ID;
 drop index ACT_IDX_PROCDEF_TENANT_ID;
 drop index ACT_IDX_DEPLOYMENT_TENANT_ID;
-drop index ACT_IDX_BYTEARRAY_TENANT_ID;
+
+drop index ACT_IDX_JOB_JOB_DEF_ID;
+drop index ACT_IDX_BATCH_SEED_JOB_DEF;
+drop index ACT_IDX_BATCH_MONITOR_JOB_DEF;
+drop index ACT_IDX_BATCH_JOB_DEF;
+
+drop index ACT_IDX_PROCDEF_VER_TAG;
+
+drop index ACT_IDX_JOB_EXECUTION_ID;
+drop index ACT_IDX_JOB_HANDLER;
 
 drop table ACT_GE_PROPERTY;
 drop table ACT_GE_BYTEARRAY;
@@ -137,4 +163,4 @@ drop table ACT_RU_AUTHORIZATION;
 drop table ACT_RU_FILTER;
 drop table ACT_RU_METER_LOG;
 drop table ACT_RU_EXT_TASK;
-
+drop table ACT_RU_BATCH;

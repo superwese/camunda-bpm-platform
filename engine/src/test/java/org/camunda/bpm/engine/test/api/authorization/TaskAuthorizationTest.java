@@ -12,28 +12,30 @@
  */
 package org.camunda.bpm.engine.test.api.authorization;
 
+
 import static org.camunda.bpm.engine.authorization.Authorization.ANY;
 import static org.camunda.bpm.engine.authorization.Permissions.CREATE;
 import static org.camunda.bpm.engine.authorization.Permissions.CREATE_INSTANCE;
 import static org.camunda.bpm.engine.authorization.Permissions.DELETE;
 import static org.camunda.bpm.engine.authorization.Permissions.READ;
 import static org.camunda.bpm.engine.authorization.Permissions.READ_TASK;
+import static org.camunda.bpm.engine.authorization.Permissions.TASK_ASSIGN;
+import static org.camunda.bpm.engine.authorization.Permissions.TASK_WORK;
 import static org.camunda.bpm.engine.authorization.Permissions.UPDATE;
 import static org.camunda.bpm.engine.authorization.Permissions.UPDATE_TASK;
 import static org.camunda.bpm.engine.authorization.Resources.PROCESS_DEFINITION;
 import static org.camunda.bpm.engine.authorization.Resources.PROCESS_INSTANCE;
 import static org.camunda.bpm.engine.authorization.Resources.TASK;
-
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-
 import org.camunda.bpm.engine.AuthorizationException;
 import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.authorization.Authorization;
 import org.camunda.bpm.engine.authorization.Resources;
 import org.camunda.bpm.engine.impl.AbstractQuery;
 import org.camunda.bpm.engine.impl.TaskServiceImpl;
+import org.camunda.bpm.engine.impl.history.HistoryLevel;
 import org.camunda.bpm.engine.impl.persistence.entity.TaskEntity;
 import org.camunda.bpm.engine.runtime.VariableInstanceQuery;
 import org.camunda.bpm.engine.task.IdentityLink;
@@ -55,9 +57,10 @@ public class TaskAuthorizationTest extends AuthorizationTest {
   protected static final String DEMO_ASSIGNEE_PROCESS_KEY = "demoAssigneeProcess";
   protected static final String CANDIDATE_USERS_PROCESS_KEY = "candidateUsersProcess";
   protected static final String CANDIDATE_GROUPS_PROCESS_KEY = "candidateGroupsProcess";
-
+  protected static final String INVALID_PERMISSION = "invalidPermission";
   protected String deploymentId;
 
+  @Override
   public void setUp() throws Exception {
     deploymentId = createDeployment(null,
         "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml",
@@ -68,6 +71,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     super.setUp();
   }
 
+  @Override
   public void tearDown() {
     super.tearDown();
     deleteDeployment(deploymentId);
@@ -127,6 +131,22 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
     createGrantAuthorization(PROCESS_DEFINITION, ANY, userId, READ_TASK);
+
+    // when
+    TaskQuery query = taskService.createTaskQuery();
+
+    // then
+    verifyQueryResults(query, 1);
+  }
+
+  public void testSimpleQueryWithMultiple() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+    createGrantAuthorization(PROCESS_DEFINITION, ANY, userId, READ_TASK);
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, READ_TASK);
+    createGrantAuthorization(TASK, ANY, userId, READ);
+    createGrantAuthorization(TASK, taskId, userId, READ);
 
     // when
     TaskQuery query = taskService.createTaskQuery();
@@ -340,6 +360,29 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     deleteTask(taskId, true);
   }
 
+  public void testSaveAndUpdateTaskWithTaskAssignPermission() {
+    // given
+    TaskEntity task = TaskEntity.create();
+    task.setAssignee("demo");
+
+    createGrantAuthorization(TASK, ANY, userId, CREATE, TASK_ASSIGN);
+
+    // when
+    taskService.saveTask(task);
+
+    task.delegate("demoNew");
+
+    taskService.saveTask(task);
+
+    // then
+    task = (TaskEntity) selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demoNew", task.getAssignee());
+
+    String taskId = task.getId();
+    deleteTask(taskId, true);
+  }
+
   // save (standalone) task (update) //////////////////////////////////////////////////////////
 
   public void testSaveStandaloneTaskUpdateWithoutAuthorization() {
@@ -356,7 +399,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     } catch (AuthorizationException e) {
 
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_ASSIGN'", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -424,6 +467,23 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals("demo", task.getAssignee());
   }
 
+  public void testSaveProcessTaskUpdateWithTaskAssignPermissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    Task task = selectSingleTask();
+    task.setAssignee("demo");
+
+    createGrantAuthorization(TASK, task.getId(), userId, TASK_ASSIGN);
+
+    // when
+    taskService.saveTask(task);
+
+    // then
+    task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+  }
+
   public void testSaveProcessTaskUpdateWithUpdatePermissionOnAnyTask() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -441,6 +501,23 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals("demo", task.getAssignee());
   }
 
+  public void testSaveProcessTaskUpdateWithTaskAssignPermissionOnAnyTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    Task task = selectSingleTask();
+    task.setAssignee("demo");
+
+    createGrantAuthorization(TASK, ANY, userId, TASK_ASSIGN);
+
+    // when
+    taskService.saveTask(task);
+
+    // then
+    task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+  }
+
   public void testSaveProcessTaskUpdateWithUpdateTasksPermissionOnProcessDefinition() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -448,6 +525,23 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     task.setAssignee("demo");
 
     createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, UPDATE_TASK);
+
+    // when
+    taskService.saveTask(task);
+
+    // then
+    task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+  }
+
+  public void testSaveProcessTaskUpdateWithTaskAssignPermissionOnProcessDefinition() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    Task task = selectSingleTask();
+    task.setAssignee("demo");
+
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
 
     // when
     taskService.saveTask(task);
@@ -590,7 +684,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to set an assignee");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_ASSIGN", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -602,6 +696,24 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     createTask(taskId);
 
     createGrantAuthorization(TASK, taskId, userId, UPDATE);
+
+    // when
+    taskService.setAssignee(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+
+    deleteTask(taskId, true);
+  }
+
+  public void testStandaloneTaskSetAssigneeWithTaskAssignPermission() {
+    // given
+    String taskId = "myTask";
+    createTask(taskId);
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
 
     // when
     taskService.setAssignee(taskId, "demo");
@@ -653,6 +765,22 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals("demo", task.getAssignee());
   }
 
+  public void testProcessTaskSetAssigneeWithTaskAssignPermissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+
+    // when
+    taskService.setAssignee(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+  }
+
   public void testProcessTaskSetAssigneeWithUpdatePersmissionOnAnyTask() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -669,12 +797,44 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals("demo", task.getAssignee());
   }
 
+  public void testProcessTaskSetAssigneeWithTaskAssignPermissionOnAnyTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, ANY, userId, TASK_ASSIGN);
+
+    // when
+    taskService.setAssignee(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+  }
+
   public void testProcessTaskSetAssigneeWithUpdateTasksPersmissionOnProcessDefinition() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
     String taskId = selectSingleTask().getId();
 
     createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, UPDATE_TASK);
+
+    // when
+    taskService.setAssignee(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+  }
+
+  public void testProcessTaskSetAssigneeWithTaskAssignPermissionOnProcessDefinition() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
 
     // when
     taskService.setAssignee(taskId, "demo");
@@ -731,7 +891,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to set an owner");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_ASSIGN", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -743,6 +903,24 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     createTask(taskId);
 
     createGrantAuthorization(TASK, taskId, userId, UPDATE);
+
+    // when
+    taskService.setOwner(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getOwner());
+
+    deleteTask(taskId, true);
+  }
+
+  public void testStandaloneTaskSetOwnerWithTaskAssignPermission() {
+    // given
+    String taskId = "myTask";
+    createTask(taskId);
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
 
     // when
     taskService.setOwner(taskId, "demo");
@@ -794,12 +972,44 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals("demo", task.getOwner());
   }
 
+  public void testProcessTaskSetOwnerWithTaskAssignPermissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+
+    // when
+    taskService.setOwner(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getOwner());
+  }
+
   public void testProcessTaskSetOwnerWithUpdatePersmissionOnAnyTask() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
     String taskId = selectSingleTask().getId();
 
     createGrantAuthorization(TASK, ANY, userId, UPDATE);
+
+    // when
+    taskService.setOwner(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getOwner());
+  }
+
+  public void testProcessTaskSetOwnerWithTaskAssignPermissionOnAnyTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, ANY, userId, TASK_ASSIGN);
 
     // when
     taskService.setOwner(taskId, "demo");
@@ -826,6 +1036,22 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals("demo", task.getOwner());
   }
 
+  public void testProcessTaskSetOwnerWithTaskAssignPermissionOnProcessDefinition() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
+
+    // when
+    taskService.setOwner(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getOwner());
+  }
+
   public void testProcessTaskSetOwner() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -833,6 +1059,23 @@ public class TaskAuthorizationTest extends AuthorizationTest {
 
     createGrantAuthorization(TASK, taskId, userId, UPDATE);
     createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, UPDATE_TASK);
+
+    // when
+    taskService.setOwner(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getOwner());
+  }
+
+  public void testProcessTaskSetOwnerWithTaskAssignPermission() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
 
     // when
     taskService.setOwner(taskId, "demo");
@@ -872,7 +1115,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to add a candidate user");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_ASSIGN", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -953,6 +1196,75 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
   }
 
+  public void testProcessTaskAddCandidateUserWithTaskAssignPermissionRevokeOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createRevokeAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+    createGrantAuthorization(TASK, taskId, userId, UPDATE);
+
+    try {
+      // when
+      taskService.addCandidateUser(taskId, "demo");
+      fail("Exception expected: It should not be possible to add an user identity link");
+    } catch (AuthorizationException e) {
+      // then
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_ASSIGN", e.getMessage());
+    }
+  }
+
+  public void testProcessTaskAddCandidateUserWithTaskAssignPermissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+
+    // when
+    taskService.addCandidateUser(taskId, "demo");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertEquals(1, linksForTask.size());
+
+    IdentityLink identityLink = linksForTask.get(0);
+    assertNotNull(identityLink);
+
+    assertEquals("demo", identityLink.getUserId());
+    assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
+  }
+
+  public void testProcessTaskAddCandidateUserWithGrantTaskAssignAndRevokeUpdatePermissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+    createRevokeAuthorization(TASK, taskId, userId, UPDATE);
+
+    // when
+    taskService.addCandidateUser(taskId, "demo");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertEquals(1, linksForTask.size());
+
+    IdentityLink identityLink = linksForTask.get(0);
+    assertNotNull(identityLink);
+
+    assertEquals("demo", identityLink.getUserId());
+    assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
+  }
+
   public void testProcessTaskAddCandidateUserWithUpdatePersmissionOnAnyTask() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -978,12 +1290,62 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
   }
 
+  public void testProcessTaskAddCandidateUserWithTaskAssignPersmissionOnAnyTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, ANY, userId, TASK_ASSIGN);
+
+    // when
+    taskService.addCandidateUser(taskId, "demo");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertEquals(1, linksForTask.size());
+
+    IdentityLink identityLink = linksForTask.get(0);
+    assertNotNull(identityLink);
+
+    assertEquals("demo", identityLink.getUserId());
+    assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
+  }
+
   public void testProcessTaskAddCandidateUserWithUpdateTasksPersmissionOnProcessDefinition() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
     String taskId = selectSingleTask().getId();
 
     createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, UPDATE_TASK);
+
+    // when
+    taskService.addCandidateUser(taskId, "demo");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertEquals(1, linksForTask.size());
+
+    IdentityLink identityLink = linksForTask.get(0);
+    assertNotNull(identityLink);
+
+    assertEquals("demo", identityLink.getUserId());
+    assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
+  }
+
+  public void testProcessTaskAddCandidateUserWithTaskAssignPermissionOnProcessDefinition() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
 
     // when
     taskService.addCandidateUser(taskId, "demo");
@@ -1067,7 +1429,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to add a candidate group");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_ASSIGN", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -1079,6 +1441,33 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     createTask(taskId);
 
     createGrantAuthorization(TASK, taskId, userId, UPDATE);
+
+    // when
+    taskService.addCandidateGroup(taskId, "accounting");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertEquals(1, linksForTask.size());
+
+    IdentityLink identityLink = linksForTask.get(0);
+    assertNotNull(identityLink);
+
+    assertEquals("accounting", identityLink.getGroupId());
+    assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
+
+    deleteTask(taskId, true);
+  }
+
+  public void testStandaloneTaskAddCandidateGroupWithTaskAssignPermission() {
+    // given
+    String taskId = "myTask";
+    createTask(taskId);
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
 
     // when
     taskService.addCandidateGroup(taskId, "accounting");
@@ -1148,12 +1537,62 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
   }
 
+  public void testProcessTaskAddCandidateGroupWithTaskAssignPermissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+
+    // when
+    taskService.addCandidateGroup(taskId, "accounting");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertEquals(1, linksForTask.size());
+
+    IdentityLink identityLink = linksForTask.get(0);
+    assertNotNull(identityLink);
+
+    assertEquals("accounting", identityLink.getGroupId());
+    assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
+  }
+
   public void testProcessTaskAddCandidateGroupWithUpdatePersmissionOnAnyTask() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
     String taskId = selectSingleTask().getId();
 
     createGrantAuthorization(TASK, ANY, userId, UPDATE);
+
+    // when
+    taskService.addCandidateGroup(taskId, "accounting");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertEquals(1, linksForTask.size());
+
+    IdentityLink identityLink = linksForTask.get(0);
+    assertNotNull(identityLink);
+
+    assertEquals("accounting", identityLink.getGroupId());
+    assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
+  }
+
+  public void testProcessTaskAddCandidateGroupWithTaskAssignPermissionOnAnyTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, ANY, userId, TASK_ASSIGN);
 
     // when
     taskService.addCandidateGroup(taskId, "accounting");
@@ -1198,6 +1637,31 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
   }
 
+  public void testProcessTaskAddCandidateGroupWithTaskAssignPersmissionOnProcessDefinition() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
+
+    // when
+    taskService.addCandidateGroup(taskId, "accounting");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertEquals(1, linksForTask.size());
+
+    IdentityLink identityLink = linksForTask.get(0);
+    assertNotNull(identityLink);
+
+    assertEquals("accounting", identityLink.getGroupId());
+    assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
+  }
+
   public void testProcessTaskAddCandidateGroup() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -1205,6 +1669,58 @@ public class TaskAuthorizationTest extends AuthorizationTest {
 
     createGrantAuthorization(TASK, taskId, userId, UPDATE);
     createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, UPDATE_TASK);
+
+    // when
+    taskService.addCandidateGroup(taskId, "accounting");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertEquals(1, linksForTask.size());
+
+    IdentityLink identityLink = linksForTask.get(0);
+    assertNotNull(identityLink);
+
+    assertEquals("accounting", identityLink.getGroupId());
+    assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
+  }
+
+  public void testProcessTaskAddCandidateGroupWithTaskAssignPermission() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
+
+    // when
+    taskService.addCandidateGroup(taskId, "accounting");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertEquals(1, linksForTask.size());
+
+    IdentityLink identityLink = linksForTask.get(0);
+    assertNotNull(identityLink);
+
+    assertEquals("accounting", identityLink.getGroupId());
+    assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
+  }
+
+  public void testProcessTaskAddCandidateGroupWithTaskAssignPermissionRevoked() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createRevokeAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
 
     // when
     taskService.addCandidateGroup(taskId, "accounting");
@@ -1262,7 +1778,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to add an user identity link");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_ASSIGN", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -1282,6 +1798,32 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     disableAuthorization();
     List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
     enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertEquals(1, linksForTask.size());
+
+    IdentityLink identityLink = linksForTask.get(0);
+    assertNotNull(identityLink);
+
+    assertEquals("demo", identityLink.getUserId());
+    assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
+
+    deleteTask(taskId, true);
+  }
+
+  public void testStandaloneTaskAddUserIdentityLinkWithTaskAssignPermission() {
+    // given
+    String taskId = "myTask";
+    createTask(taskId);
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+
+    // when
+    taskService.addUserIdentityLink(taskId, "demo", IdentityLinkType.CANDIDATE);
+
+
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
 
     assertNotNull(linksForTask);
     assertEquals(1, linksForTask.size());
@@ -1343,6 +1885,31 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
   }
 
+  public void testProcessTaskAddUserIdentityLinkWithTaskAssignPermissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+
+    // when
+    taskService.addUserIdentityLink(taskId, "demo", IdentityLinkType.CANDIDATE);
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertEquals(1, linksForTask.size());
+
+    IdentityLink identityLink = linksForTask.get(0);
+    assertNotNull(identityLink);
+
+    assertEquals("demo", identityLink.getUserId());
+    assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
+  }
+
   public void testProcessTaskAddUserIdentityLinkWithUpdatePersmissionOnAnyTask() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -1368,12 +1935,62 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
   }
 
+  public void testProcessTaskAddUserIdentityLinkWithTaskAssignPersmissionOnAnyTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, ANY, userId, TASK_ASSIGN);
+
+    // when
+    taskService.addUserIdentityLink(taskId, "demo", IdentityLinkType.CANDIDATE);
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertEquals(1, linksForTask.size());
+
+    IdentityLink identityLink = linksForTask.get(0);
+    assertNotNull(identityLink);
+
+    assertEquals("demo", identityLink.getUserId());
+    assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
+  }
+
   public void testProcessTaskAddUserIdentityLinkWithUpdateTasksPersmissionOnProcessDefinition() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
     String taskId = selectSingleTask().getId();
 
     createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, UPDATE_TASK);
+
+    // when
+    taskService.addUserIdentityLink(taskId, "demo", IdentityLinkType.CANDIDATE);
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertEquals(1, linksForTask.size());
+
+    IdentityLink identityLink = linksForTask.get(0);
+    assertNotNull(identityLink);
+
+    assertEquals("demo", identityLink.getUserId());
+    assertEquals(IdentityLinkType.CANDIDATE, identityLink.getType());
+  }
+
+  public void testProcessTaskAddUserIdentityLinkWithTaskAssignPermissionOnProcessDefinition() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
 
     // when
     taskService.addUserIdentityLink(taskId, "demo", IdentityLinkType.CANDIDATE);
@@ -1457,7 +2074,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to add a group identity link");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_ASSIGN", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -1653,7 +2270,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to delete a candidate user");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_ASSIGN", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -1666,6 +2283,28 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     addCandidateUser(taskId, "demo");
 
     createGrantAuthorization(TASK, taskId, userId, UPDATE);
+
+    // when
+    taskService.deleteCandidateUser(taskId, "demo");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertTrue(linksForTask.isEmpty());
+
+    deleteTask(taskId, true);
+  }
+
+  public void testStandaloneTaskDeleteCandidateUserWithTaskAssignPermission() {
+    // given
+    String taskId = "myTask";
+    createTask(taskId);
+    addCandidateUser(taskId, "demo");
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
 
     // when
     taskService.deleteCandidateUser(taskId, "demo");
@@ -1725,6 +2364,26 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertTrue(linksForTask.isEmpty());
   }
 
+  public void testProcessTaskDeleteCandidateUserWithTaskAssignPermissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+    addCandidateUser(taskId, "demo");
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+
+    // when
+    taskService.deleteCandidateUser(taskId, "demo");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertTrue(linksForTask.isEmpty());
+  }
+
   public void testProcessTaskDeleteCandidateUserWithUpdatePersmissionOnAnyTask() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -1745,6 +2404,26 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertTrue(linksForTask.isEmpty());
   }
 
+  public void testProcessTaskDeleteCandidateUserWithTaskAssignPermissionOnAnyTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+    addCandidateUser(taskId, "demo");
+
+    createGrantAuthorization(TASK, ANY, userId, TASK_ASSIGN);
+
+    // when
+    taskService.deleteCandidateUser(taskId, "demo");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertTrue(linksForTask.isEmpty());
+  }
+
   public void testProcessTaskDeleteCandidateUserWithUpdateTasksPersmissionOnProcessDefinition() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -1752,6 +2431,26 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     addCandidateUser(taskId, "demo");
 
     createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, UPDATE_TASK);
+
+    // when
+    taskService.deleteCandidateUser(taskId, "demo");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertTrue(linksForTask.isEmpty());
+  }
+
+  public void testProcessTaskDeleteCandidateUserWithTaskAssignPersmissionOnProcessDefinition() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+    addCandidateUser(taskId, "demo");
+
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
 
     // when
     taskService.deleteCandidateUser(taskId, "demo");
@@ -1820,7 +2519,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to delete a candidate group");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_ASSIGN", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -1833,6 +2532,28 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     addCandidateGroup(taskId, "accounting");
 
     createGrantAuthorization(TASK, taskId, userId, UPDATE);
+
+    // when
+    taskService.deleteCandidateGroup(taskId, "accounting");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertTrue(linksForTask.isEmpty());
+
+    deleteTask(taskId, true);
+  }
+
+  public void testStandaloneTaskDeleteCandidateGroupWithTaskAssignPermission() {
+    // given
+    String taskId = "myTask";
+    createTask(taskId);
+    addCandidateGroup(taskId, "accounting");
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
 
     // when
     taskService.deleteCandidateGroup(taskId, "accounting");
@@ -1892,6 +2613,26 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertTrue(linksForTask.isEmpty());
   }
 
+  public void testProcessTaskDeleteCandidateGroupWithTaskAssignPermissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+    addCandidateGroup(taskId, "accounting");
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+
+    // when
+    taskService.deleteCandidateGroup(taskId, "accounting");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertTrue(linksForTask.isEmpty());
+  }
+
   public void testProcessTaskDeleteCandidateGroupWithUpdatePersmissionOnAnyTask() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -1912,6 +2653,26 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertTrue(linksForTask.isEmpty());
   }
 
+  public void testProcessTaskDeleteCandidateGroupWithTaskAssignPersmissionOnAnyTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+    addCandidateGroup(taskId, "accounting");
+
+    createGrantAuthorization(TASK, ANY, userId, TASK_ASSIGN);
+
+    // when
+    taskService.deleteCandidateGroup(taskId, "accounting");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertTrue(linksForTask.isEmpty());
+  }
+
   public void testProcessTaskDeleteCandidateGroupWithUpdateTasksPersmissionOnProcessDefinition() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -1919,6 +2680,26 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     addCandidateGroup(taskId, "accounting");
 
     createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, UPDATE_TASK);
+
+    // when
+    taskService.deleteCandidateGroup(taskId, "accounting");
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertTrue(linksForTask.isEmpty());
+  }
+
+  public void testProcessTaskDeleteCandidateGroupWithTaskAssignPermissionOnProcessDefinition() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+    addCandidateGroup(taskId, "accounting");
+
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
 
     // when
     taskService.deleteCandidateGroup(taskId, "accounting");
@@ -1987,7 +2768,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to delete an user identity link");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_ASSIGN", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -2000,6 +2781,28 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     addCandidateUser(taskId, "demo");
 
     createGrantAuthorization(TASK, taskId, userId, UPDATE);
+
+    // when
+    taskService.deleteUserIdentityLink(taskId, "demo", IdentityLinkType.CANDIDATE);
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertTrue(linksForTask.isEmpty());
+
+    deleteTask(taskId, true);
+  }
+
+  public void testStandaloneTaskDeleteUserIdentityLinkWithTaskAssignPermission() {
+    // given
+    String taskId = "myTask";
+    createTask(taskId);
+    addCandidateUser(taskId, "demo");
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
 
     // when
     taskService.deleteUserIdentityLink(taskId, "demo", IdentityLinkType.CANDIDATE);
@@ -2059,6 +2862,26 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertTrue(linksForTask.isEmpty());
   }
 
+  public void testProcessTaskDeleteUserIdentityLinkWithTaskAssignPersmissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+    addCandidateUser(taskId, "demo");
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+
+    // when
+    taskService.deleteUserIdentityLink(taskId, "demo", IdentityLinkType.CANDIDATE);
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertTrue(linksForTask.isEmpty());
+  }
+
   public void testProcessTaskDeleteUserIdentityLinkWithUpdatePersmissionOnAnyTask() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -2066,6 +2889,26 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     addCandidateUser(taskId, "demo");
 
     createGrantAuthorization(TASK, ANY, userId, UPDATE);
+
+    // when
+    taskService.deleteUserIdentityLink(taskId, "demo", IdentityLinkType.CANDIDATE);
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertTrue(linksForTask.isEmpty());
+  }
+
+  public void testProcessTaskDeleteUserIdentityLinkWithTaskAssignPersmissionOnAnyTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+    addCandidateUser(taskId, "demo");
+
+    createGrantAuthorization(TASK, ANY, userId, TASK_ASSIGN);
 
     // when
     taskService.deleteUserIdentityLink(taskId, "demo", IdentityLinkType.CANDIDATE);
@@ -2099,6 +2942,26 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertTrue(linksForTask.isEmpty());
   }
 
+  public void testProcessTaskDeleteUserIdentityLinkWithTaskAssignPersmissionOnProcessDefinition() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+    addCandidateUser(taskId, "demo");
+
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
+
+    // when
+    taskService.deleteUserIdentityLink(taskId, "demo", IdentityLinkType.CANDIDATE);
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertTrue(linksForTask.isEmpty());
+  }
+
   public void testProcessTaskDeleteUserIdentityLink() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -2107,6 +2970,27 @@ public class TaskAuthorizationTest extends AuthorizationTest {
 
     createGrantAuthorization(TASK, taskId, userId, UPDATE);
     createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, UPDATE_TASK);
+
+    // when
+    taskService.deleteUserIdentityLink(taskId, "demo", IdentityLinkType.CANDIDATE);
+
+    // then
+    disableAuthorization();
+    List<IdentityLink> linksForTask = taskService.getIdentityLinksForTask(taskId);
+    enableAuthorization();
+
+    assertNotNull(linksForTask);
+    assertTrue(linksForTask.isEmpty());
+  }
+
+  public void testProcessTaskDeleteUserIdentityLinkWithTaskAssignPermission() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+    addCandidateUser(taskId, "demo");
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
 
     // when
     taskService.deleteUserIdentityLink(taskId, "demo", IdentityLinkType.CANDIDATE);
@@ -2154,7 +3038,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to delete a group identity link");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_ASSIGN", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -2463,7 +3347,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to claim the task.");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'.", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions:", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -2483,6 +3367,44 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     Task task = selectSingleTask();
     assertNotNull(task);
     assertEquals("demo", task.getAssignee());
+
+    deleteTask(taskId, true);
+  }
+
+  public void testStandaloneTaskClaimTaskWithTaskWorkPermission() {
+    // given
+    String taskId = "myTask";
+    createTask(taskId);
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_WORK);
+
+    // when
+    taskService.claim(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+
+    deleteTask(taskId, true);
+  }
+
+  public void testStandaloneTaskClaimTaskWithRevokeTaskWorkPermission() {
+    // given
+    String taskId = "myTask";
+    createTask(taskId);
+
+    createRevokeAuthorization(TASK, taskId, userId, TASK_WORK);
+    createGrantAuthorization(TASK, taskId, userId, UPDATE);
+
+    try {
+      // when
+      taskService.claim(taskId, "demo");
+      fail("Exception expected: It should not be possible to complete a task");
+    } catch (AuthorizationException e) {
+      // then
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_WORK", e.getMessage());
+    }
 
     deleteTask(taskId, true);
   }
@@ -2526,12 +3448,80 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals("demo", task.getAssignee());
   }
 
+  public void testProcessTaskClaimTaskWithTaskWorkPermissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_WORK);
+
+    // when
+    taskService.claim(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+  }
+
+  public void testProcessTaskClaimTaskWithGrantTaskWorkAndRevokeUpdatePermissionsOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_WORK);
+    createRevokeAuthorization(TASK, taskId, userId, UPDATE);
+
+    // when
+    taskService.claim(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+  }
+
+  public void testProcessTaskClaimTaskWithRevokeTaskWorkPermissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createRevokeAuthorization(TASK, taskId, userId, TASK_WORK);
+    createGrantAuthorization(TASK, taskId, userId, UPDATE);
+
+    try {
+      // when
+      taskService.complete(taskId);
+      fail("Exception expected: It should not be possible to complete a task");
+    } catch (AuthorizationException e) {
+      // then
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_WORK", e.getMessage());
+    }
+
+  }
+
   public void testProcessTaskClaimTaskWithUpdatePermissionOnAnyTask() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
     String taskId = selectSingleTask().getId();
 
     createGrantAuthorization(TASK, ANY, userId, UPDATE);
+
+    // when
+    taskService.claim(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+  }
+
+  public void testProcessTaskClaimTaskWithTaskWorkPermissionOnAnyTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_WORK);
 
     // when
     taskService.claim(taskId, "demo");
@@ -2558,8 +3548,43 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals("demo", task.getAssignee());
   }
 
-  public void testProcessTaskClaimTask() {
+  public void testProcessTaskClaimTaskWithTaskWorkPermissionOnProcessDefinition() {
     // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_WORK);
+
+    // when
+    taskService.claim(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+
+   }
+
+  public void testProcessTaskClaimTaskWithRevokeTaskWorkPermissionOnProcessDefinition() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createRevokeAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_WORK);
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, UPDATE_TASK);
+
+    try {
+      // when
+      taskService.complete(taskId);
+      fail("Exception expected: It should not be possible to complete a task");
+    } catch (AuthorizationException e) {
+      // then
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_WORK", e.getMessage());
+    }
+
+   }
+
+  public void testProcessTaskClaimTask() {
     startProcessInstanceByKey(PROCESS_KEY);
     String taskId = selectSingleTask().getId();
 
@@ -2604,7 +3629,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to complete a task");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'.", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_WORK", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -2624,7 +3649,28 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     Task task = selectSingleTask();
     assertNull(task);
 
-    historyService.deleteHistoricTaskInstance(taskId);
+    if (!processEngineConfiguration.getHistoryLevel().equals(HistoryLevel.HISTORY_LEVEL_NONE)) {
+      historyService.deleteHistoricTaskInstance(taskId);
+    }
+  }
+
+  public void testStandaloneTaskCompleteWithTaskWorkPermission() {
+    // given
+    String taskId = "myTask";
+    createTask(taskId);
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_WORK);
+
+    // when
+    taskService.complete(taskId);
+
+    // then
+    Task task = selectSingleTask();
+    assertNull(task);
+
+    if (!processEngineConfiguration.getHistoryLevel().equals(HistoryLevel.HISTORY_LEVEL_NONE)) {
+      historyService.deleteHistoricTaskInstance(taskId);
+    }
   }
 
   // complete (process) task ////////////////////////////////////////////////////////////
@@ -2665,6 +3711,21 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertNull(task);
   }
 
+  public void testProcessTaskCompleteTaskWithTaskWorkPermissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_WORK);
+
+    // when
+    taskService.complete(taskId);
+
+    // then
+    Task task = selectSingleTask();
+    assertNull(task);
+  }
+
   public void testProcessTaskCompleteTaskWithUpdatePermissionOnAnyTask() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -2686,6 +3747,21 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     String taskId = selectSingleTask().getId();
 
     createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, UPDATE_TASK);
+
+    // when
+    taskService.complete(taskId);
+
+    // then
+    Task task = selectSingleTask();
+    assertNull(task);
+  }
+
+  public void testProcessTaskCompleteTaskWithTaskWorkPermissionOnProcessDefinition() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_WORK);
 
     // when
     taskService.complete(taskId);
@@ -2739,7 +3815,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to delegate a task");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'.", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_ASSIGN", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -2751,6 +3827,24 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     createTask(taskId);
 
     createGrantAuthorization(TASK, taskId, userId, UPDATE);
+
+    // when
+    taskService.delegateTask(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+
+    deleteTask(taskId, true);
+  }
+
+  public void testStandaloneTaskDelegateTaskWithTaskAssignPermission() {
+    // given
+    String taskId = "myTask";
+    createTask(taskId);
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
 
     // when
     taskService.delegateTask(taskId, "demo");
@@ -2802,12 +3896,44 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals("demo", task.getAssignee());
   }
 
+  public void testProcessTaskDelegateTaskWithTaskAssignPermissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+
+    // when
+    taskService.delegateTask(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+  }
+
   public void testProcessTaskDelegateTaskWithUpdatePermissionOnAnyTask() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
     String taskId = selectSingleTask().getId();
 
     createGrantAuthorization(TASK, ANY, userId, UPDATE);
+
+    // when
+    taskService.delegateTask(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+  }
+
+  public void testProcessTaskDelegateTaskWithTaskAssignPermissionOnAnyTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, ANY, userId, TASK_ASSIGN);
 
     // when
     taskService.delegateTask(taskId, "demo");
@@ -2834,6 +3960,22 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals("demo", task.getAssignee());
   }
 
+  public void testProcessTaskDelegateTaskWithTaskAssignPermissionOnProcessDefinition() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
+
+    // when
+    taskService.delegateTask(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+  }
+
   public void testProcessTaskDelegateTask() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -2841,6 +3983,23 @@ public class TaskAuthorizationTest extends AuthorizationTest {
 
     createGrantAuthorization(TASK, taskId, userId, UPDATE);
     createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, UPDATE_TASK);
+
+    // when
+    taskService.delegateTask(taskId, "demo");
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals("demo", task.getAssignee());
+  }
+
+  public void testProcessTaskDelegateTaskWithTaskAssignPermission() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
 
     // when
     taskService.delegateTask(taskId, "demo");
@@ -2880,7 +4039,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to resolve a task");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'.", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_WORK", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -3033,7 +4192,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
       fail("Exception expected: It should not be possible to set a priority");
     } catch (AuthorizationException e) {
       // then
-      assertTextPresent("The user with id 'test' does not have 'UPDATE' permission on resource 'myTask' of type 'Task'", e.getMessage());
+      assertTextPresent("The user with id 'test' does not have one of the following permissions: 'TASK_ASSIGN'", e.getMessage());
     }
 
     deleteTask(taskId, true);
@@ -3045,6 +4204,24 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     createTask(taskId);
 
     createGrantAuthorization(TASK, taskId, userId, UPDATE);
+
+    // when
+    taskService.setPriority(taskId, 80);
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals(80, task.getPriority());
+
+    deleteTask(taskId, true);
+  }
+
+  public void testStandaloneTaskSetPriorityWithTaskAssignPermission() {
+    // given
+    String taskId = "myTask";
+    createTask(taskId);
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
 
     // when
     taskService.setPriority(taskId, 80);
@@ -3096,12 +4273,44 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(80, task.getPriority());
   }
 
+  public void testProcessTaskSetPriorityWithTaskAssignPermissionOnTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+
+    // when
+    taskService.setPriority(taskId, 80);
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals(80, task.getPriority());
+  }
+
   public void testProcessTaskSetPriorityWithUpdatePersmissionOnAnyTask() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
     String taskId = selectSingleTask().getId();
 
     createGrantAuthorization(TASK, ANY, userId, UPDATE);
+
+    // when
+    taskService.setPriority(taskId, 80);
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals(80, task.getPriority());
+  }
+
+  public void testProcessTaskSetPriorityWithTaskAssignPermissionOnAnyTask() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, ANY, userId, TASK_ASSIGN);
 
     // when
     taskService.setPriority(taskId, 80);
@@ -3128,6 +4337,22 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(80, task.getPriority());
   }
 
+  public void testProcessTaskSetPriorityWithTaskAssignPermissionOnProcessDefinition() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
+
+    // when
+    taskService.setPriority(taskId, 80);
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals(80, task.getPriority());
+  }
+
   public void testProcessTaskSetPriority() {
     // given
     startProcessInstanceByKey(PROCESS_KEY);
@@ -3135,6 +4360,23 @@ public class TaskAuthorizationTest extends AuthorizationTest {
 
     createGrantAuthorization(TASK, taskId, userId, UPDATE);
     createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, UPDATE_TASK);
+
+    // when
+    taskService.setPriority(taskId, 80);
+
+    // then
+    Task task = selectSingleTask();
+    assertNotNull(task);
+    assertEquals(80, task.getPriority());
+  }
+
+  public void testProcessTaskSetPriorityWithTaskAssignPermission() {
+    // given
+    startProcessInstanceByKey(PROCESS_KEY);
+    String taskId = selectSingleTask().getId();
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
+    createGrantAuthorization(PROCESS_DEFINITION, PROCESS_KEY, userId, TASK_ASSIGN);
 
     // when
     taskService.setPriority(taskId, 80);
@@ -3481,7 +4723,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     deleteTask(taskId, true);
   }
@@ -3509,7 +4751,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     deleteTask(taskId, true);
   }
@@ -3539,7 +4781,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     deleteTask(taskId, true);
   }
@@ -3592,8 +4834,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
-
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
     deleteTask(taskId, true);
   }
 
@@ -3622,7 +4863,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     deleteTask(taskId, true);
   }
@@ -3651,7 +4892,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
   }
 
   public void testProcessTaskSetAssigneeUpdateAuthorization() {
@@ -3677,7 +4918,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
   }
 
   public void testProcessTaskSetAssigneeToNullAuthorizationStillAvailable() {
@@ -3705,7 +4946,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
   }
 
   public void testQueryProcessTaskSetAssignee() {
@@ -3753,7 +4994,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     // demo is able to retrieve the task
     identityService.clearAuthentication();
@@ -3814,7 +5055,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     deleteTask(taskId, true);
   }
@@ -3842,7 +5083,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     deleteTask(taskId, true);
   }
@@ -3894,7 +5135,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     deleteTask(taskId, true);
   }
@@ -3924,7 +5165,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     deleteTask(taskId, true);
   }
@@ -3953,7 +5194,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
   }
 
   public void testProcessTaskSetOwnerUpdateAuthorization() {
@@ -3979,7 +5220,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
   }
 
   public void testQueryProcessTaskSetOwner() {
@@ -4050,7 +5291,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     deleteTask(taskId, true);
   }
@@ -4078,7 +5319,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     deleteTask(taskId, true);
   }
@@ -4089,6 +5330,31 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     createTask(taskId);
 
     createGrantAuthorization(TASK, taskId, userId, UPDATE);
+
+    // add candidate user -> an authorization for demo is available
+    taskService.addCandidateUser(taskId, "demo");
+
+    identityService.clearAuthentication();
+    identityService.setAuthentication("demo", null);
+
+    // when
+    Task task = taskService.createTaskQuery().singleResult();
+
+    // then
+    assertNotNull(task);
+    assertEquals(taskId, task.getId());
+
+    identityService.clearAuthentication();
+    identityService.setAuthentication(userId, Arrays.asList(groupId));
+    deleteTask(taskId, true);
+  }
+
+  public void testQueryStandaloneTaskAddCandidateUserWithTaskAssignPermission() {
+    // given
+    String taskId = "myTask";
+    createTask(taskId);
+
+    createGrantAuthorization(TASK, taskId, userId, TASK_ASSIGN);
 
     // add candidate user -> an authorization for demo is available
     taskService.addCandidateUser(taskId, "demo");
@@ -4131,7 +5397,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
   }
 
   public void testProcessTaskAddCandidateUserUpdateAuthorization() {
@@ -4157,7 +5423,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
   }
 
   public void testQueryProcessTaskAddCandidateUser() {
@@ -4205,7 +5471,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     // an authorization for test has been created
     disableAuthorization();
@@ -4220,7 +5486,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     // demo is able to retrieve the task
     identityService.clearAuthentication();
@@ -4286,7 +5552,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     deleteTask(taskId, true);
   }
@@ -4314,7 +5580,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     deleteTask(taskId, true);
   }
@@ -4367,7 +5633,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
   }
 
   public void testProcessTaskAddCandidateGroupUpdateAuthorization() {
@@ -4393,7 +5659,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
   }
 
   public void testQueryProcessTaskAddCandidateGroup() {
@@ -4441,7 +5707,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     // an authorization for accounting has been created
     disableAuthorization();
@@ -4455,7 +5721,7 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     assertEquals(TASK.resourceType(), authorization.getResourceType());
     assertEquals(taskId, authorization.getResourceId());
     assertTrue(authorization.isPermissionGranted(READ));
-    assertTrue(authorization.isPermissionGranted(UPDATE));
+    assertTrue(authorization.isPermissionGranted(getDefaultTaskPermissionForUser()));
 
     // management is able to retrieve the task
     identityService.clearAuthentication();
@@ -8685,8 +9951,48 @@ public class TaskAuthorizationTest extends AuthorizationTest {
     deleteTask(task.getId(), true);
   }
 
+  public void testStandaloneTaskSaveIdentityLinkWithGenericGroupIdAndTaskAssignPermission() {
+    createGrantAuthorization(TASK, ANY, userId, CREATE, TASK_ASSIGN);
+
+    Task task = taskService.newTask();
+    taskService.saveTask(task);
+
+    try {
+      taskService.addGroupIdentityLink(task.getId(), "*", "someLink");
+      fail("exception expected");
+    } catch (ProcessEngineException e) {
+      assertTextPresent("Cannot grant default authorization for identity link to group *: "
+          + "id cannot be *. * is a reserved identifier.", e.getMessage());
+    }
+
+    deleteTask(task.getId(), true);
+  }
+
   public void testStandaloneTaskSaveIdentityLinkWithGenericTaskId() {
     createGrantAuthorization(TASK, ANY, userId, CREATE, UPDATE);
+
+    Task task = taskService.newTask();
+    taskService.saveTask(task);
+
+    try {
+      taskService.addUserIdentityLink("*", "aUserId", "someLink");
+      fail("exception expected");
+    } catch (ProcessEngineException e) {
+      assertTextPresent("Cannot find task with id *", e.getMessage());
+    }
+
+    try {
+      taskService.addGroupIdentityLink("*", "aGroupId", "someLink");
+      fail("exception expected");
+    } catch (ProcessEngineException e) {
+      assertTextPresent("Cannot find task with id *", e.getMessage());
+    }
+
+    deleteTask(task.getId(), true);
+  }
+
+  public void testStandaloneTaskSaveIdentityLinkWithGenericTaskIdAndTaskAssignPermission() {
+    createGrantAuthorization(TASK, ANY, userId, CREATE, TASK_ASSIGN);
 
     Task task = taskService.newTask();
     taskService.saveTask(task);

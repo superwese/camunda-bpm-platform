@@ -12,11 +12,14 @@
  */
 package org.camunda.bpm.engine.rest.dto.task;
 
+import static java.lang.Boolean.TRUE;
+
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response.Status;
 
@@ -108,7 +111,6 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
   private String processDefinitionId;
   private String executionId;
   private String[] activityInstanceIdIn;
-  private String[] tenantIdIn;
   private String processDefinitionName;
   private String processDefinitionNameLike;
   private String processInstanceId;
@@ -136,6 +138,7 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
   private String ownerExpression;
   private Integer priority;
   private String parentTaskId;
+  protected Boolean assigned;
   private Boolean unassigned;
   private Boolean active;
   private Boolean suspended;
@@ -172,8 +175,13 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
 
   private String delegationState;
 
+  private String[] tenantIdIn;
+  private Boolean withoutTenantId;
+
   private List<String> candidateGroups;
   private String candidateGroupsExpression;
+  protected Boolean withCandidateGroups;
+  protected Boolean withoutCandidateGroups;
 
   private List<VariableQueryParameterDto> taskVariables;
   private List<VariableQueryParameterDto> processVariables;
@@ -232,6 +240,11 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
     this.tenantIdIn = tenantIdIn;
   }
 
+  @CamundaQueryParam(value = "withoutTenantId", converter = BooleanConverter.class)
+  public void setWithoutTenantId(Boolean withoutTenantId) {
+    this.withoutTenantId = withoutTenantId;
+  }
+
   @CamundaQueryParam("processDefinitionName")
   public void setProcessDefinitionName(String processDefinitionName) {
     this.processDefinitionName = processDefinitionName;
@@ -275,6 +288,16 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
   @CamundaQueryParam("candidateGroupExpression")
   public void setCandidateGroupExpression(String candidateGroupExpression) {
     this.candidateGroupExpression = candidateGroupExpression;
+  }
+
+  @CamundaQueryParam(value = "withCandidateGroups", converter = BooleanConverter.class)
+  public void setWithCandidateGroups(Boolean withCandidateGroups) {
+    this.withCandidateGroups = withCandidateGroups;
+  }
+
+  @CamundaQueryParam(value = "withoutCandidateGroups", converter = BooleanConverter.class)
+  public void setWithoutCandidateGroups(Boolean withoutCandidateGroups) {
+    this.withoutCandidateGroups = withoutCandidateGroups;
   }
 
   @CamundaQueryParam("candidateUser")
@@ -367,6 +390,11 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
     this.parentTaskId = parentTaskId;
   }
 
+  @CamundaQueryParam(value = "assigned", converter = BooleanConverter.class)
+  public void setAssigned(Boolean assigned) {
+    this.assigned = assigned;
+  }
+  
   @CamundaQueryParam(value = "unassigned", converter = BooleanConverter.class)
   public void setUnassigned(Boolean unassigned) {
     this.unassigned = unassigned;
@@ -614,6 +642,10 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
 
   public String[] getTenantIdIn() {
     return tenantIdIn;
+  }
+
+  public Boolean getWithoutTenantId() {
+    return withoutTenantId;
   }
 
   public String getProcessDefinitionName() {
@@ -901,6 +933,9 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
     if (tenantIdIn != null && tenantIdIn.length > 0) {
       query.tenantIdIn(tenantIdIn);
     }
+    if (TRUE.equals(withoutTenantId)) {
+      query.withoutTenantId();
+    }
     if (processDefinitionName != null) {
       query.processDefinitionName(processDefinitionName);
     }
@@ -927,6 +962,12 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
     }
     if (candidateGroupExpression != null) {
       query.taskCandidateGroupExpression(candidateGroupExpression);
+    }
+    if (withCandidateGroups != null) {
+      query.withCandidateGroups();
+    }
+    if (withoutCandidateGroups != null) {
+      query.withoutCandidateGroups();
     }
     if (candidateUser != null) {
       query.taskCandidateUser(candidateUser);
@@ -978,6 +1019,9 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
     }
     if (parentTaskId != null) {
       query.taskParentTaskId(parentTaskId);
+    }
+    if (assigned != null && assigned) {
+      query.taskAssigned();
     }
     if (unassigned != null && unassigned) {
       query.taskUnassigned();
@@ -1270,6 +1314,8 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
     dto.candidateGroup = taskQuery.getCandidateGroup();
     dto.candidateGroups = taskQuery.getCandidateGroupsInternal();
     dto.includeAssignedTasks = taskQuery.isIncludeAssignedTasksInternal();
+    dto.withCandidateGroups = taskQuery.isWithCandidateGroups();
+    dto.withoutCandidateGroups = taskQuery.isWithoutCandidateGroups();
 
     dto.processInstanceBusinessKey = taskQuery.getProcessInstanceBusinessKey();
     dto.processInstanceBusinessKeyLike = taskQuery.getProcessInstanceBusinessKeyLike();
@@ -1277,7 +1323,7 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
     dto.processDefinitionKeyIn = taskQuery.getProcessDefinitionKeys();
     dto.processDefinitionId = taskQuery.getProcessDefinitionId();
     dto.executionId = taskQuery.getExecutionId();
-    dto.tenantIdIn = taskQuery.getTenantIds();
+
     dto.processDefinitionName = taskQuery.getProcessDefinitionName();
     dto.processDefinitionNameLike = taskQuery.getProcessDefinitionNameLike();
     dto.processInstanceId = taskQuery.getProcessInstanceId();
@@ -1295,6 +1341,7 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
     dto.nameLike = taskQuery.getNameLike();
     dto.owner = taskQuery.getOwner();
     dto.priority = taskQuery.getPriority();
+    dto.assigned = taskQuery.isAssignedInternal();
     dto.unassigned = taskQuery.isUnassignedInternal();
     dto.parentTaskId = taskQuery.getParentTaskId();
 
@@ -1315,6 +1362,14 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
 
     if (taskQuery.getDelegationState() != null) {
       dto.delegationState = taskQuery.getDelegationState().toString();
+    }
+
+    if (taskQuery.isTenantIdSet()) {
+      if (taskQuery.getTenantIds() != null) {
+        dto.tenantIdIn = taskQuery.getTenantIds();
+      } else {
+        dto.withoutTenantId = true;
+      }
     }
 
     dto.processVariables = new ArrayList<VariableQueryParameterDto>();
@@ -1471,6 +1526,9 @@ public class TaskQueryDto extends AbstractQueryDto<TaskQuery> {
     }
     else if (TaskQueryProperty.TASK_ID.equals(queryProperty)) {
       return SORT_BY_ID_VALUE;
+    }
+    else if (TaskQueryProperty.TENANT_ID.equals(queryProperty)) {
+      return SORT_BY_TENANT_ID_VALUE;
     }
     else {
       throw new RestException("Unknown query property for task query " + queryProperty);

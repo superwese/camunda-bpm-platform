@@ -12,12 +12,12 @@
  */
 package org.camunda.bpm.engine.impl.cmd;
 
-import java.util.Date;
-
 import org.camunda.bpm.engine.history.UserOperationLogEntry;
 import org.camunda.bpm.engine.impl.jobexecutor.TimerActivateProcessDefinitionHandler;
-import org.camunda.bpm.engine.impl.persistence.entity.ProcessDefinitionEntity;
+import org.camunda.bpm.engine.impl.management.UpdateJobDefinitionSuspensionStateBuilderImpl;
 import org.camunda.bpm.engine.impl.persistence.entity.SuspensionState;
+import org.camunda.bpm.engine.impl.repository.UpdateProcessDefinitionSuspensionStateBuilderImpl;
+import org.camunda.bpm.engine.impl.runtime.UpdateProcessInstanceSuspensionStateBuilderImpl;
 
 /**
  * @author Daniel Meyer
@@ -26,32 +26,31 @@ import org.camunda.bpm.engine.impl.persistence.entity.SuspensionState;
  */
 public class ActivateProcessDefinitionCmd extends AbstractSetProcessDefinitionStateCmd {
 
-  public ActivateProcessDefinitionCmd(ProcessDefinitionEntity processDefinitionEntity,
-          boolean includeProcessInstances, Date executionDate) {
-    super(processDefinitionEntity, includeProcessInstances, executionDate);
+  public ActivateProcessDefinitionCmd(UpdateProcessDefinitionSuspensionStateBuilderImpl builder) {
+    super(builder);
   }
 
-  public ActivateProcessDefinitionCmd(String processDefinitionId, String processDefinitionKey,
-          boolean includeProcessInstances, Date executionDate) {
-    super(processDefinitionId, processDefinitionKey, includeProcessInstances, executionDate);
-  }
-
+  @Override
   protected SuspensionState getNewSuspensionState() {
     return SuspensionState.ACTIVE;
   }
 
+  @Override
   protected String getDelayedExecutionJobHandlerType() {
     return TimerActivateProcessDefinitionHandler.TYPE;
   }
 
-  protected AbstractSetJobDefinitionStateCmd getSetJobDefinitionStateCmd() {
-    return new ActivateJobDefinitionCmd(null, processDefinitionId, processDefinitionKey, false, null);
+  @Override
+  protected AbstractSetJobDefinitionStateCmd getSetJobDefinitionStateCmd(UpdateJobDefinitionSuspensionStateBuilderImpl jobDefinitionSuspensionStateBuilder) {
+    return new ActivateJobDefinitionCmd(jobDefinitionSuspensionStateBuilder);
   }
 
-  protected ActivateProcessInstanceCmd getNextCommand() {
-    return new ActivateProcessInstanceCmd(null, processDefinitionId, processDefinitionKey);
+  @Override
+  protected ActivateProcessInstanceCmd getNextCommand(UpdateProcessInstanceSuspensionStateBuilderImpl processInstanceCommandBuilder) {
+    return new ActivateProcessInstanceCmd(processInstanceCommandBuilder);
   }
 
+  @Override
   protected String getLogEntryOperation() {
     return UserOperationLogEntry.OPERATION_TYPE_ACTIVATE_PROCESS_DEFINITION;
   }

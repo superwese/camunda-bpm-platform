@@ -13,6 +13,12 @@
 
 package org.camunda.bpm.engine.impl.migration.instance;
 
+import org.camunda.bpm.engine.impl.context.Context;
+import org.camunda.bpm.engine.impl.history.HistoryLevel;
+import org.camunda.bpm.engine.impl.history.event.HistoryEvent;
+import org.camunda.bpm.engine.impl.history.event.HistoryEventProcessor;
+import org.camunda.bpm.engine.impl.history.event.HistoryEventTypes;
+import org.camunda.bpm.engine.impl.history.producer.HistoryEventProducer;
 import org.camunda.bpm.engine.impl.persistence.entity.ExecutionEntity;
 import org.camunda.bpm.engine.impl.persistence.entity.IncidentEntity;
 import org.camunda.bpm.engine.impl.pvm.process.ScopeImpl;
@@ -21,27 +27,61 @@ public class MigratingIncident implements MigratingInstance {
 
   protected IncidentEntity incident;
   protected ScopeImpl targetScope;
+  protected String targetJobDefinitionId;
 
   public MigratingIncident(IncidentEntity incident, ScopeImpl targetScope) {
     this.incident = incident;
     this.targetScope = targetScope;
   }
 
+  public void setTargetJobDefinitionId(String targetJobDefinitionId) {
+    this.targetJobDefinitionId = targetJobDefinitionId;
+  }
+
+  @Override
+  public boolean isDetached() {
+    return incident.getExecutionId() == null;
+  }
+
   public void detachState() {
     incident.setExecution(null);
   }
 
-  public void attachState(ExecutionEntity newScopeExecution) {
-    incident.setExecution(newScopeExecution);
+  public void attachState(MigratingScopeInstance newOwningInstance) {
+    attachTo(newOwningInstance.resolveRepresentativeExecution());
+  }
+
+  @Override
+  public void attachState(MigratingTransitionInstance targetTransitionInstance) {
+    attachTo(targetTransitionInstance.resolveRepresentativeExecution());
   }
 
   public void migrateState() {
     incident.setActivityId(targetScope.getId());
     incident.setProcessDefinitionId(targetScope.getProcessDefinition().getId());
+    incident.setJobDefinitionId(targetJobDefinitionId);
+
+    migrateHistory();
+  }
+
+  protected void migrateHistory() {
+    HistoryLevel historyLevel = Context.getProcessEngineConfiguration().getHistoryLevel();
+
+    if (historyLevel.isHistoryEventProduced(HistoryEventTypes.INCIDENT_MIGRATE, this)) {
+      HistoryEventProcessor.processHistoryEvents(new HistoryEventProcessor.HistoryEventCreator() {
+        @Override
+        public HistoryEvent createHistoryEvent(HistoryEventProducer producer) {
+          return producer.createHistoricIncidentMigrateEvt(incident);
+        }
+      });
+    }
   }
 
   public void migrateDependentEntities() {
     // nothing to do
   }
 
+  protected void attachTo(ExecutionEntity execution) {
+    incident.setExecution(execution);
+  }
 }

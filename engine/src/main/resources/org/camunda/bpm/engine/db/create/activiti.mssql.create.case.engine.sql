@@ -27,6 +27,7 @@ create table ACT_RU_CASE_EXECUTION (
     PREV_STATE_ int,
     CURRENT_STATE_ int,
     REQUIRED_ tinyint,
+    TENANT_ID_ nvarchar(64),
     primary key (ID_)
 );
 
@@ -42,7 +43,10 @@ create table ACT_RU_CASE_SENTRY_PART (
     SOURCE_CASE_EXEC_ID_ nvarchar(64),
     STANDARD_EVENT_ nvarchar(255),
     SOURCE_ nvarchar(255),
+    VARIABLE_EVENT_ nvarchar(255),
+    VARIABLE_NAME_ nvarchar(255),
     SATISFIED_ tinyint,
+    TENANT_ID_ nvarchar(64),
     primary key (ID_)
 );
 
@@ -111,3 +115,4 @@ create index ACT_IDX_CASE_SENTRY_CASE_INST on ACT_RU_CASE_SENTRY_PART(CASE_INST_
 create index ACT_IDX_CASE_SENTRY_CASE_EXEC on ACT_RU_CASE_SENTRY_PART(CASE_EXEC_ID_);
 
 create index ACT_IDX_CASE_DEF_TENANT_ID on ACT_RE_CASE_DEF(TENANT_ID_);
+create index ACT_IDX_CASE_EXEC_TENANT_ID on ACT_RU_CASE_EXECUTION(TENANT_ID_);

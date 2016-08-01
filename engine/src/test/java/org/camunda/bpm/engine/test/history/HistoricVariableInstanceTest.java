@@ -19,6 +19,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.camunda.bpm.engine.ProcessEngineConfiguration;
 import org.camunda.bpm.engine.ProcessEngineException;
 import org.camunda.bpm.engine.history.HistoricActivityInstance;
 import org.camunda.bpm.engine.history.HistoricDetail;
@@ -37,6 +38,7 @@ import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.camunda.bpm.engine.task.Task;
 import org.camunda.bpm.engine.task.TaskQuery;
 import org.camunda.bpm.engine.test.Deployment;
+import org.camunda.bpm.engine.test.RequiredHistoryLevel;
 import org.camunda.bpm.engine.test.api.runtime.util.CustomSerializable;
 import org.camunda.bpm.engine.test.api.runtime.util.FailingSerializable;
 import org.camunda.bpm.engine.variable.Variables;
@@ -48,6 +50,7 @@ import org.camunda.bpm.engine.variable.value.ObjectValue;
 /**
  * @author Christian Lipphardt (camunda)
  */
+@RequiredHistoryLevel(ProcessEngineConfiguration.HISTORY_AUDIT)
 public class HistoricVariableInstanceTest extends PluggableProcessEngineTestCase {
 
   @Deployment(resources={
@@ -378,6 +381,40 @@ public class HistoricVariableInstanceTest extends PluggableProcessEngineTestCase
     // check existing variables for task ID
     assertEquals(1, historyService.createHistoricVariableInstanceQuery().taskIdIn(tasks.get(0).getId()).list().size());
     assertEquals(1, historyService.createHistoricVariableInstanceQuery().taskIdIn(tasks.get(0).getId()).count());
+  }
+
+  @Deployment(resources={"org/camunda/bpm/engine/test/history/HistoricVariableInstanceTest.testParallel.bpmn20.xml"})
+  public void testHistoricVariableInstanceQueryByProcessIdIn() {
+    // given
+    Map<String, Object> vars = new HashMap<String, Object>();
+    ProcessInstance processInstance = runtimeService.startProcessInstanceByKey("myProc",vars);
+    ProcessInstance processInstance2 = runtimeService.startProcessInstanceByKey("myProc",vars);
+
+    // check existing variables for process instance ID
+    assertEquals(4, historyService.createHistoricVariableInstanceQuery().processInstanceIdIn(processInstance.getProcessInstanceId(),processInstance2.getProcessInstanceId()).count());
+    assertEquals(4, historyService.createHistoricVariableInstanceQuery().processInstanceIdIn(processInstance.getProcessInstanceId(),processInstance2.getProcessInstanceId()).list().size());
+
+    //add check with not existing search
+    String notExistingSearch = processInstance.getProcessInstanceId() + "-notExisting";
+    assertEquals(2, historyService.createHistoricVariableInstanceQuery().processInstanceIdIn(notExistingSearch,processInstance2.getProcessInstanceId()).count());
+  }
+
+  @Deployment(resources={"org/camunda/bpm/engine/test/history/HistoricVariableInstanceTest.testParallel.bpmn20.xml"})
+  public void testHistoricVariableInstanceQueryByInvalidProcessIdIn() {
+    // given
+    Map<String, Object> vars = new HashMap<String, Object>();
+    ProcessInstance processInstance = runtimeService.startProcessInstanceByKey("myProc",vars);
+
+    // check existing variables for task ID
+    try {
+      historyService.createHistoricVariableInstanceQuery().processInstanceIdIn(processInstance.getProcessInstanceId(),null);
+      fail("Search by process instance ID was finished");
+    } catch (ProcessEngineException e) { }
+
+    try {
+      historyService.createHistoricVariableInstanceQuery().processInstanceIdIn(null,processInstance.getProcessInstanceId());
+      fail("Search by process instance ID was finished");
+    } catch (ProcessEngineException e) { }
   }
 
   @Deployment(resources={"org/camunda/bpm/engine/test/api/runtime/oneTaskProcess.bpmn20.xml"})
@@ -1506,7 +1543,7 @@ public class HistoricVariableInstanceTest extends PluggableProcessEngineTestCase
   }
 
   @Deployment
-  public void FAILING_testForkParallelGatewayTreeCompaction() {
+  public void testForkParallelGatewayTreeCompaction() {
     // given
     runtimeService.startProcessInstanceByKey("process");
 
@@ -1533,7 +1570,7 @@ public class HistoricVariableInstanceTest extends PluggableProcessEngineTestCase
   }
 
   @Deployment
-  public void FAILING_testNestedForkParallelGatewayTreeCompaction() {
+  public void testNestedForkParallelGatewayTreeCompaction() {
     // given
     runtimeService.startProcessInstanceByKey("process");
 

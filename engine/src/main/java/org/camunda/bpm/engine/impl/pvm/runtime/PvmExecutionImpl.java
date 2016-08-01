@@ -51,7 +51,6 @@ import org.camunda.bpm.engine.impl.tree.ExecutionWalker;
 import org.camunda.bpm.engine.impl.tree.FlowScopeWalker;
 import org.camunda.bpm.engine.impl.tree.LeafActivityInstanceExecutionCollector;
 import org.camunda.bpm.engine.impl.tree.ReferenceWalker;
-import org.camunda.bpm.engine.impl.tree.ReferenceWalker.WalkCondition;
 import org.camunda.bpm.engine.impl.tree.ScopeCollector;
 import org.camunda.bpm.engine.impl.tree.ScopeExecutionCollector;
 import org.camunda.bpm.engine.impl.tree.TreeVisitor;
@@ -100,6 +99,7 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
 
   protected boolean deleteRoot;
   protected String deleteReason;
+  protected transient boolean externallyTerminated;
 
   //state/type of execution //////////////////////////////////////////////////
 
@@ -233,12 +233,19 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
 
   /**
    * perform starting behavior but don't execute the initial activity
+   * @param variables the variables which are used for the start
    */
-  public void startWithoutExecuting() {
+  public void startWithoutExecuting(Map<String, Object> variables) {
     initialize();
     initializeTimerDeclarations();
     fireHistoricProcessStartEvent();
     performOperation(PvmAtomicOperation.FIRE_PROCESS_START);
+
+    setActivity(null);
+    setActivityInstanceId(getId());
+
+    // set variables
+    setVariables(variables);
   }
 
   public abstract void fireHistoricProcessStartEvent();
@@ -246,7 +253,6 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
   @Override
   public void destroy() {
     LOG.destroying(this);
-
     setScope(false);
   }
 
@@ -311,6 +317,7 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
   @Override
   public void end(boolean completeScope) {
 
+
     setCompleteScope(completeScope);
 
     isActive = false;
@@ -325,8 +332,8 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
 
   @Override
   public void endCompensation() {
-    remove();
     performOperation(PvmAtomicOperation.FIRE_ACTIVITY_END);
+    remove();
 
     PvmExecutionImpl parent = getParent();
 
@@ -468,6 +475,7 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
       concurrentReplacingExecution.setConcurrent(true);
       concurrentReplacingExecution.setScope(false);
       concurrentReplacingExecution.setActive(false);
+      concurrentReplacingExecution.onConcurrentExpand(this);
       child.setParent(concurrentReplacingExecution);
       this.leaveActivityInstance();
       this.setActivity(null);
@@ -496,11 +504,6 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
             for (PvmExecutionImpl childExecution : lastConcurrent.getExecutionsAsCopy()) {
               childExecution.setParent(this);
             }
-          }
-
-          if (!lastConcurrent.isEnded()) {
-            // Copy execution-local variables of lastConcurrent
-            setVariablesLocal(lastConcurrent.getVariablesLocal());
           }
 
           // Make sure parent execution is re-activated when the last concurrent
@@ -532,11 +535,16 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
   }
 
   public void deleteCascade(String deleteReason, boolean skipCustomListeners, boolean skipIoMappings) {
+    deleteCascade(deleteReason,skipCustomListeners,skipIoMappings,false);
+  }
+
+  public void deleteCascade(String deleteReason, boolean skipCustomListeners, boolean skipIoMappings, boolean externallyTerminated) {
     this.deleteReason = deleteReason;
     this.deleteRoot = true;
     this.isEnded = true;
     this.skipCustomListeners = skipCustomListeners;
     this.skipIoMapping = skipIoMappings;
+    this.externallyTerminated = externallyTerminated;
     performOperation(PvmAtomicOperation.DELETE_CASCADE);
   }
 
@@ -676,6 +684,16 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
     execution.leaveActivityInstance();
   }
 
+  /**
+   * Callback on tree expansion when this execution is used as the concurrent execution
+   * where the argument's children become a subordinate to. Note that this case is not the inverse
+   * of replace because replace has the semantics that the replacing execution can be used to continue
+   * execution of this execution's activity instance.
+   */
+  public void onConcurrentExpand(PvmExecutionImpl scopeExecution) {
+    // by default, do nothing
+  }
+
   // methods that translate to operations /////////////////////////////////////
 
   @Override
@@ -776,7 +794,6 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
       boolean skipCustomListeners, boolean skipIoMappings) {
 
 
-    PvmExecutionImpl propagatingExecution = createConcurrentExecution();
 
     ScopeImpl flowScope = null;
     if (!activityStack.isEmpty()) {
@@ -787,9 +804,13 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
       flowScope = targetTransition.getSource().getFlowScope();
     }
 
+    PvmExecutionImpl propagatingExecution = null;
     if (flowScope.getActivityBehavior() instanceof ModificationObserverBehavior) {
       ModificationObserverBehavior flowScopeBehavior = (ModificationObserverBehavior) flowScope.getActivityBehavior();
-      flowScopeBehavior.concurrentExecutionCreated(propagatingExecution.getParent(), propagatingExecution);
+      propagatingExecution = (PvmExecutionImpl) flowScopeBehavior.createInnerInstance(this);
+    }
+    else {
+      propagatingExecution = createConcurrentExecution();
     }
 
     propagatingExecution.executeActivities(activityStack, targetActivity, targetTransition, variables, localVariables,
@@ -799,11 +820,16 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
   /**
    * Instantiates the given set of activities and returns the execution for the bottom-most activity
    */
-  public Map<PvmActivity, PvmExecutionImpl> instantiateScopes(List<PvmActivity> activityStack) {
+  public Map<PvmActivity, PvmExecutionImpl> instantiateScopes(List<PvmActivity> activityStack,
+      boolean skipCustomListeners,
+      boolean skipIoMappings) {
 
     if (activityStack.isEmpty()) {
       return Collections.emptyMap();
     }
+
+    this.skipCustomListeners = skipCustomListeners;
+    this.skipIoMapping = skipIoMappings;
 
     ExecutionStartContext executionStartContext = new ExecutionStartContext(false);
 
@@ -881,15 +907,24 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
   public List<ActivityExecution> findInactiveConcurrentExecutions(PvmActivity activity) {
     List<PvmExecutionImpl> inactiveConcurrentExecutionsInActivity = new ArrayList<PvmExecutionImpl>();
     if (isConcurrent()) {
-      List< ? extends PvmExecutionImpl> concurrentExecutions = getParent().getAllChildExecutions();
-      for (PvmExecutionImpl concurrentExecution: concurrentExecutions) {
-        if (concurrentExecution.getActivity() == activity && !concurrentExecution.isActive()) {
-          inactiveConcurrentExecutionsInActivity.add(concurrentExecution);
-        }
-      }
+      return getParent().findInactiveChildExecutions(activity);
     }
     else if (!isActive()) {
       inactiveConcurrentExecutionsInActivity.add(this);
+    }
+
+    return (List) inactiveConcurrentExecutionsInActivity;
+  }
+
+  @Override
+  @SuppressWarnings({ "rawtypes", "unchecked" })
+  public List<ActivityExecution> findInactiveChildExecutions(PvmActivity activity) {
+    List<PvmExecutionImpl> inactiveConcurrentExecutionsInActivity = new ArrayList<PvmExecutionImpl>();
+    List< ? extends PvmExecutionImpl> concurrentExecutions = getAllChildExecutions();
+    for (PvmExecutionImpl concurrentExecution: concurrentExecutions) {
+      if (concurrentExecution.getActivity() == activity && !concurrentExecution.isActive()) {
+        inactiveConcurrentExecutionsInActivity.add(concurrentExecution);
+      }
     }
 
     return (List) inactiveConcurrentExecutionsInActivity;
@@ -1501,6 +1536,45 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
     return getParent();
   }
 
+  /**
+   * {@inheritDoc}
+   */
+  public void setVariable (String variableName, Object value, String activityId) {
+    PvmExecutionImpl executionForFlowScope = this.findExecutionForFlowScope(activityId);
+    if (executionForFlowScope != null) {
+      executionForFlowScope.setVariableLocal(variableName,value);
+    }
+  }
+
+  /**
+   *
+   * @param targetScopeId - destination scope to be found in current execution tree
+   * @return execution with activity id corresponding to targetScopeId
+   */
+  protected PvmExecutionImpl findExecutionForFlowScope(final String targetScopeId) {
+    EnsureUtil.ensureNotNull("target scope id", targetScopeId);
+
+    ScopeImpl currentActivity = getActivity();
+    EnsureUtil.ensureNotNull("activity of current execution", currentActivity);
+
+    FlowScopeWalker walker = new FlowScopeWalker(currentActivity);
+    ScopeImpl targetFlowScope = walker.walkUntil(new ReferenceWalker.WalkCondition<ScopeImpl>() {
+
+      @Override
+      public boolean isFulfilled(ScopeImpl scope) {
+        return scope == null || scope.getId().equals(targetScopeId);
+      }
+
+    });
+
+    if (targetFlowScope == null) {
+      throw LOG.scopeNotFoundException(targetScopeId,this.getId());
+    }
+
+    return findExecutionForFlowScope(targetFlowScope);
+  }
+
+
   // sequence counter ///////////////////////////////////////////////////////////
 
   public long getSequenceCounter() {
@@ -1516,6 +1590,15 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
   }
 
   // Getter / Setters ///////////////////////////////////
+
+
+  public boolean isExternallyTerminated() {
+    return externallyTerminated;
+  }
+
+  public void setExternallyTerminated(boolean externallyTerminated) {
+    this.externallyTerminated = externallyTerminated;
+  }
 
   public String getDeleteReason() {
     return deleteReason;
@@ -1602,7 +1685,7 @@ public abstract class PvmExecutionImpl extends CoreExecution implements Activity
   }
 
   public void setCompleteScope(boolean completeScope) {
-    if (completeScope) {
+    if (completeScope && !isCanceled()) {
       activityInstanceState = ActivityInstanceState.SCOPE_COMPLETE.getStateCode();
     }
   }
